@@ -1,15 +1,25 @@
 [project]
-name = "rllib"
+name = "playhouse"
 version = "0.1.0"
-description = "Add your description here"
+description = "Subset of PufferLib, ported for self-educational purposes"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "gymnasium>=1.2.2",
     "numpy>=2.3.5",
+    "raylib>=5.5.0.3",
+    "torch>=2.9.1",
+    "tetris_rust",
 ]
+
+[tool.uv.sources]
+tetris_rust = { workspace = true }
+
+[tool.uv.workspace]
+members = ["playhouse/environments/tetris/tetris_rust"]
 
 [dependency-groups]
 dev = [
+    "pyo3-stubgen>=0.3.0",
     "ruff>=0.14.5",
 ]
