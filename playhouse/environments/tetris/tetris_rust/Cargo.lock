@@ -1122,6 +1122,7 @@ name = "tetris_rust"
 version = "0.1.0"
 dependencies = [
  "numpy",
+ "once_cell",
  "pyo3",
  "pyo3-stub-gen",
  "rand 0.9.2",

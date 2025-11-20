@@ -230,7 +230,7 @@ impl VecTetrisEnv {
                 "env_id out of range",
             ));
         }
-        // Rendering not implemented in Rust version
+        self.envs[env_id].env.render();
         Ok(())
     }
 }

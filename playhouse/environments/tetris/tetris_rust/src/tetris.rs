@@ -1,12 +1,16 @@
 use crate::tetrominoes::{
-    NUM_ROTATIONS, NUM_TETROMINOES, SIZE, TETROMINO_FILL_COLS, TETROMINO_FILL_ROWS, TETROMINOES,
+    NUM_ROTATIONS, NUM_TETROMINOES, SIZE, TETROMINO_COLORS, TETROMINO_FILL_COLS, TETROMINO_FILL_ROWS, TETROMINOES,
 };
+use once_cell::sync::OnceCell;
 use rand::{Rng, SeedableRng};
+use raylib::prelude::*;
+use std::thread;
 
-#[allow(dead_code)]
-const HALF_LINEWIDTH: usize = 1;
-#[allow(dead_code)]
-const SQUARE_SIZE: usize = 32;
+const HALF_LINEWIDTH: i32 = 1;
+const SQUARE_SIZE: i32 = 32;
+
+// Store the main thread ID to ensure rendering only happens on main thread
+static MAIN_THREAD_ID: OnceCell<thread::ThreadId> = OnceCell::new();
 const DECK_SIZE: usize = 2 * NUM_TETROMINOES; // To implement the 7-bag system
 const NUM_PREVIEW: usize = 2;
 const NUM_FLOAT_OBS: usize = 6;
@@ -102,15 +106,13 @@ impl std::ops::Add for Log {
     }
 }
 
-#[derive(Default)]
-#[allow(dead_code)]
 struct Client {
     total_cols: i32,
     total_rows: i32,
     ui_rows: i32,
     deck_rows: i32,
-    preview_target_rotation: i32,
-    preview_target_col: i32,
+    rl: RaylibHandle,
+    thread: RaylibThread,
 }
 
 pub struct Tetris {
@@ -725,5 +727,196 @@ impl Tetris {
         }
 
         self.compute_observations();
+    }
+
+    pub fn render(&mut self) {
+        // Ensure we're on the main thread
+        let main_thread_id = MAIN_THREAD_ID.get_or_init(|| thread::current().id());
+        assert_eq!(
+            *main_thread_id,
+            thread::current().id(),
+            "Rendering must be called from the main thread"
+        );
+
+        // Initialize client/window if needed
+        if self.client.is_none() {
+            let ui_rows = 1;
+            let deck_rows = SIZE as i32;
+            let total_rows = 1 + ui_rows + 1 + deck_rows + 1 + self.n_rows as i32 + 1;
+            let total_cols = (1 + self.n_cols + 1).max(1 + 3 * NUM_PREVIEW) as i32;
+
+            let (rl, thread) = raylib::init()
+                .size(SQUARE_SIZE * total_cols, SQUARE_SIZE * total_rows)
+                .title("PufferLib Tetris")
+                .build();
+
+            self.client = Some(Client {
+                total_cols,
+                total_rows,
+                ui_rows,
+                deck_rows,
+                rl,
+                thread,
+            });
+        }
+
+        let client = self.client.as_mut().unwrap();
+
+        // Check for window close or escape key
+        if client.rl.window_should_close() || client.rl.is_key_down(KeyboardKey::KEY_ESCAPE) {
+            return;
+        }
+
+        // Toggle fullscreen with TAB
+        if client.rl.is_key_pressed(KeyboardKey::KEY_TAB) {
+            client.rl.toggle_fullscreen();
+        }
+
+        // Colors
+        let border_color = Color::new(100, 100, 100, 255);
+        let dash_color = Color::new(80, 80, 80, 255);
+        let dash_color_bright = Color::new(150, 150, 150, 255);
+        let dash_color_dark = Color::new(50, 50, 50, 255);
+
+        let mut d = client.rl.begin_drawing(&client.thread);
+        d.clear_background(Color::BLACK);
+
+        // Draw outer grid border
+        for r in 0..client.total_rows {
+            for c in 0..client.total_cols {
+                let x = c * SQUARE_SIZE;
+                let y = r * SQUARE_SIZE;
+
+                if (c == 0) || (c == client.total_cols - 1) ||
+                   ((r >= 1 + client.ui_rows + 1) && (r < 1 + client.ui_rows + 1 + client.deck_rows)) ||
+                   ((r >= 1 + client.ui_rows + 1 + client.deck_rows + 1) && (c >= self.n_rows as i32)) ||
+                   (r == 0) ||
+                   (r == 1 + client.ui_rows) ||
+                   (r == 1 + client.ui_rows + 1 + client.deck_rows) ||
+                   (r == client.total_rows - 1) {
+                    d.draw_rectangle(
+                        x + HALF_LINEWIDTH,
+                        y + HALF_LINEWIDTH,
+                        SQUARE_SIZE - 2 * HALF_LINEWIDTH,
+                        SQUARE_SIZE - 2 * HALF_LINEWIDTH,
+                        border_color,
+                    );
+                    d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color_dark);
+                    d.draw_rectangle(x - HALF_LINEWIDTH, y + SQUARE_SIZE - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color_dark);
+                    d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color_dark);
+                    d.draw_rectangle(x + SQUARE_SIZE - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color_dark);
+                }
+            }
+        }
+
+        // Draw main grid
+        for r in 0..self.n_rows {
+            for c in 0..self.n_cols {
+                let x = (c + 1) as i32 * SQUARE_SIZE;
+                let y = (1 + client.ui_rows + 1 + client.deck_rows + 1 + r as i32) * SQUARE_SIZE;
+                let block_id = self.grid[r * self.n_cols + c];
+
+                let color = if block_id == 0 {
+                    Color::BLACK
+                } else if block_id < 0 {
+                    TETROMINO_COLORS[(-block_id - 1) as usize]
+                } else {
+                    TETROMINO_COLORS[(block_id - 1) as usize]
+                };
+
+                d.draw_rectangle(x + HALF_LINEWIDTH, y + HALF_LINEWIDTH, SQUARE_SIZE - 2 * HALF_LINEWIDTH, SQUARE_SIZE - 2 * HALF_LINEWIDTH, color);
+                d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color);
+                d.draw_rectangle(x - HALF_LINEWIDTH, y + SQUARE_SIZE - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color);
+                d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color);
+                d.draw_rectangle(x + SQUARE_SIZE - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color);
+            }
+        }
+
+        // Draw current tetromino
+        for r in 0..SIZE {
+            for c in 0..SIZE {
+                if TETROMINOES[self.cur_tetromino][self.cur_tetromino_rot][r][c] == 1 {
+                    let x = (c + self.cur_tetromino_col + 1) as i32 * SQUARE_SIZE;
+                    let y = (1 + client.ui_rows + 1 + client.deck_rows + 1 + r as i32 + self.cur_tetromino_row as i32) * SQUARE_SIZE;
+                    let color = TETROMINO_COLORS[self.cur_tetromino];
+
+                    d.draw_rectangle(x + HALF_LINEWIDTH, y + HALF_LINEWIDTH, SQUARE_SIZE - 2 * HALF_LINEWIDTH, SQUARE_SIZE - 2 * HALF_LINEWIDTH, color);
+                    d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color);
+                    d.draw_rectangle(x - HALF_LINEWIDTH, y + SQUARE_SIZE - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color);
+                    d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color);
+                    d.draw_rectangle(x + SQUARE_SIZE - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color);
+                }
+            }
+        }
+
+        // Draw deck preview (next pieces)
+        for i in 0..NUM_PREVIEW {
+            let deck_idx = (self.cur_position_in_deck + 1 + i) % DECK_SIZE;
+            let tetromino_id = self.tetromino_deck[deck_idx];
+            for r in 0..SIZE {
+                for c in 0..2 {
+                    let x = (c + 1 + 3 * i) as i32 * SQUARE_SIZE;
+                    let y = (1 + client.ui_rows + 1 + r as i32) * SQUARE_SIZE;
+                    let r_offset = SIZE - TETROMINO_FILL_ROWS[tetromino_id][0] as usize;
+
+                    let color = if r < r_offset {
+                        Color::BLACK
+                    } else if TETROMINOES[tetromino_id][0][r - r_offset][c] == 0 {
+                        Color::BLACK
+                    } else {
+                        TETROMINO_COLORS[tetromino_id]
+                    };
+
+                    d.draw_rectangle(x + HALF_LINEWIDTH, y + HALF_LINEWIDTH, SQUARE_SIZE - 2 * HALF_LINEWIDTH, SQUARE_SIZE - 2 * HALF_LINEWIDTH, color);
+                    d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color_bright);
+                    d.draw_rectangle(x - HALF_LINEWIDTH, y + SQUARE_SIZE - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color_bright);
+                    d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color_bright);
+                    d.draw_rectangle(x + SQUARE_SIZE - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color_bright);
+                }
+            }
+        }
+
+        // Draw hold tetromino
+        for r in 0..SIZE {
+            for c in 0..2 {
+                let x = (client.total_cols - 3 + c as i32) * SQUARE_SIZE;
+                let y = (1 + client.ui_rows + 1 + r as i32) * SQUARE_SIZE;
+
+                let color = if let Some(hold_id) = self.hold_tetromino {
+                    let r_offset = SIZE - TETROMINO_FILL_ROWS[hold_id][0] as usize;
+                    if r < r_offset {
+                        Color::BLACK
+                    } else if TETROMINOES[hold_id][0][r - r_offset][c] == 0 {
+                        Color::BLACK
+                    } else {
+                        TETROMINO_COLORS[hold_id]
+                    }
+                } else {
+                    Color::BLACK
+                };
+
+                d.draw_rectangle(x + HALF_LINEWIDTH, y + HALF_LINEWIDTH, SQUARE_SIZE - 2 * HALF_LINEWIDTH, SQUARE_SIZE - 2 * HALF_LINEWIDTH, color);
+                d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color_bright);
+                d.draw_rectangle(x - HALF_LINEWIDTH, y + SQUARE_SIZE - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color_bright);
+                d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color_bright);
+                d.draw_rectangle(x + SQUARE_SIZE - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color_bright);
+            }
+        }
+
+        // Draw UI text
+        d.draw_text(
+            &format!("Score: {}", self.score),
+            SQUARE_SIZE + 4,
+            SQUARE_SIZE + 4,
+            28,
+            Color::new(255, 160, 160, 255),
+        );
+        d.draw_text(
+            &format!("Lvl: {}", self.game_level),
+            (client.total_cols - 4) * SQUARE_SIZE,
+            SQUARE_SIZE + 4,
+            28,
+            Color::new(160, 255, 160, 255),
+        );
     }
 }
