@@ -1,5 +1,6 @@
 use crate::tetrominoes::{
-    NUM_ROTATIONS, NUM_TETROMINOES, SIZE, TETROMINO_COLORS, TETROMINO_FILL_COLS, TETROMINO_FILL_ROWS, TETROMINOES,
+    NUM_ROTATIONS, NUM_TETROMINOES, SIZE, TETROMINO_COLORS, TETROMINO_FILL_COLS,
+    TETROMINO_FILL_ROWS, TETROMINOES,
 };
 use once_cell::sync::OnceCell;
 use rand::{Rng, SeedableRng};
@@ -747,7 +748,7 @@ impl Tetris {
 
             let (rl, thread) = raylib::init()
                 .size(SQUARE_SIZE * total_cols, SQUARE_SIZE * total_rows)
-                .title("PufferLib Tetris")
+                .title("Tetris")
                 .build();
 
             self.client = Some(Client {
@@ -787,13 +788,16 @@ impl Tetris {
                 let x = c * SQUARE_SIZE;
                 let y = r * SQUARE_SIZE;
 
-                if (c == 0) || (c == client.total_cols - 1) ||
-                   ((r >= 1 + client.ui_rows + 1) && (r < 1 + client.ui_rows + 1 + client.deck_rows)) ||
-                   ((r >= 1 + client.ui_rows + 1 + client.deck_rows + 1) && (c >= self.n_rows as i32)) ||
-                   (r == 0) ||
-                   (r == 1 + client.ui_rows) ||
-                   (r == 1 + client.ui_rows + 1 + client.deck_rows) ||
-                   (r == client.total_rows - 1) {
+                if (c == 0)
+                    || (c == client.total_cols - 1)
+                    || ((r > 1 + client.ui_rows) && (r < 1 + client.ui_rows + 1 + client.deck_rows))
+                    || ((r > 1 + client.ui_rows + client.deck_rows + 1)
+                        && (c >= self.n_rows as i32))
+                    || (r == 0)
+                    || (r == 1 + client.ui_rows)
+                    || (r == 1 + client.ui_rows + 1 + client.deck_rows)
+                    || (r == client.total_rows - 1)
+                {
                     d.draw_rectangle(
                         x + HALF_LINEWIDTH,
                         y + HALF_LINEWIDTH,
@@ -801,10 +805,34 @@ impl Tetris {
                         SQUARE_SIZE - 2 * HALF_LINEWIDTH,
                         border_color,
                     );
-                    d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color_dark);
-                    d.draw_rectangle(x - HALF_LINEWIDTH, y + SQUARE_SIZE - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color_dark);
-                    d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color_dark);
-                    d.draw_rectangle(x + SQUARE_SIZE - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color_dark);
+                    d.draw_rectangle(
+                        x - HALF_LINEWIDTH,
+                        y - HALF_LINEWIDTH,
+                        SQUARE_SIZE,
+                        2 * HALF_LINEWIDTH,
+                        dash_color_dark,
+                    );
+                    d.draw_rectangle(
+                        x - HALF_LINEWIDTH,
+                        y + SQUARE_SIZE - HALF_LINEWIDTH,
+                        SQUARE_SIZE,
+                        2 * HALF_LINEWIDTH,
+                        dash_color_dark,
+                    );
+                    d.draw_rectangle(
+                        x - HALF_LINEWIDTH,
+                        y - HALF_LINEWIDTH,
+                        2 * HALF_LINEWIDTH,
+                        SQUARE_SIZE,
+                        dash_color_dark,
+                    );
+                    d.draw_rectangle(
+                        x + SQUARE_SIZE - HALF_LINEWIDTH,
+                        y - HALF_LINEWIDTH,
+                        2 * HALF_LINEWIDTH,
+                        SQUARE_SIZE,
+                        dash_color_dark,
+                    );
                 }
             }
         }
@@ -824,11 +852,41 @@ impl Tetris {
                     TETROMINO_COLORS[(block_id - 1) as usize]
                 };
 
-                d.draw_rectangle(x + HALF_LINEWIDTH, y + HALF_LINEWIDTH, SQUARE_SIZE - 2 * HALF_LINEWIDTH, SQUARE_SIZE - 2 * HALF_LINEWIDTH, color);
-                d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color);
-                d.draw_rectangle(x - HALF_LINEWIDTH, y + SQUARE_SIZE - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color);
-                d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color);
-                d.draw_rectangle(x + SQUARE_SIZE - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color);
+                d.draw_rectangle(
+                    x + HALF_LINEWIDTH,
+                    y + HALF_LINEWIDTH,
+                    SQUARE_SIZE - 2 * HALF_LINEWIDTH,
+                    SQUARE_SIZE - 2 * HALF_LINEWIDTH,
+                    color,
+                );
+                d.draw_rectangle(
+                    x - HALF_LINEWIDTH,
+                    y - HALF_LINEWIDTH,
+                    SQUARE_SIZE,
+                    2 * HALF_LINEWIDTH,
+                    dash_color,
+                );
+                d.draw_rectangle(
+                    x - HALF_LINEWIDTH,
+                    y + SQUARE_SIZE - HALF_LINEWIDTH,
+                    SQUARE_SIZE,
+                    2 * HALF_LINEWIDTH,
+                    dash_color,
+                );
+                d.draw_rectangle(
+                    x - HALF_LINEWIDTH,
+                    y - HALF_LINEWIDTH,
+                    2 * HALF_LINEWIDTH,
+                    SQUARE_SIZE,
+                    dash_color,
+                );
+                d.draw_rectangle(
+                    x + SQUARE_SIZE - HALF_LINEWIDTH,
+                    y - HALF_LINEWIDTH,
+                    2 * HALF_LINEWIDTH,
+                    SQUARE_SIZE,
+                    dash_color,
+                );
             }
         }
 
@@ -837,14 +895,51 @@ impl Tetris {
             for c in 0..SIZE {
                 if TETROMINOES[self.cur_tetromino][self.cur_tetromino_rot][r][c] == 1 {
                     let x = (c + self.cur_tetromino_col + 1) as i32 * SQUARE_SIZE;
-                    let y = (1 + client.ui_rows + 1 + client.deck_rows + 1 + r as i32 + self.cur_tetromino_row as i32) * SQUARE_SIZE;
+                    let y = (1
+                        + client.ui_rows
+                        + 1
+                        + client.deck_rows
+                        + 1
+                        + r as i32
+                        + self.cur_tetromino_row as i32)
+                        * SQUARE_SIZE;
                     let color = TETROMINO_COLORS[self.cur_tetromino];
 
-                    d.draw_rectangle(x + HALF_LINEWIDTH, y + HALF_LINEWIDTH, SQUARE_SIZE - 2 * HALF_LINEWIDTH, SQUARE_SIZE - 2 * HALF_LINEWIDTH, color);
-                    d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color);
-                    d.draw_rectangle(x - HALF_LINEWIDTH, y + SQUARE_SIZE - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color);
-                    d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color);
-                    d.draw_rectangle(x + SQUARE_SIZE - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color);
+                    d.draw_rectangle(
+                        x + HALF_LINEWIDTH,
+                        y + HALF_LINEWIDTH,
+                        SQUARE_SIZE - 2 * HALF_LINEWIDTH,
+                        SQUARE_SIZE - 2 * HALF_LINEWIDTH,
+                        color,
+                    );
+                    d.draw_rectangle(
+                        x - HALF_LINEWIDTH,
+                        y - HALF_LINEWIDTH,
+                        SQUARE_SIZE,
+                        2 * HALF_LINEWIDTH,
+                        dash_color,
+                    );
+                    d.draw_rectangle(
+                        x - HALF_LINEWIDTH,
+                        y + SQUARE_SIZE - HALF_LINEWIDTH,
+                        SQUARE_SIZE,
+                        2 * HALF_LINEWIDTH,
+                        dash_color,
+                    );
+                    d.draw_rectangle(
+                        x - HALF_LINEWIDTH,
+                        y - HALF_LINEWIDTH,
+                        2 * HALF_LINEWIDTH,
+                        SQUARE_SIZE,
+                        dash_color,
+                    );
+                    d.draw_rectangle(
+                        x + SQUARE_SIZE - HALF_LINEWIDTH,
+                        y - HALF_LINEWIDTH,
+                        2 * HALF_LINEWIDTH,
+                        SQUARE_SIZE,
+                        dash_color,
+                    );
                 }
             }
         }
@@ -867,11 +962,41 @@ impl Tetris {
                         TETROMINO_COLORS[tetromino_id]
                     };
 
-                    d.draw_rectangle(x + HALF_LINEWIDTH, y + HALF_LINEWIDTH, SQUARE_SIZE - 2 * HALF_LINEWIDTH, SQUARE_SIZE - 2 * HALF_LINEWIDTH, color);
-                    d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color_bright);
-                    d.draw_rectangle(x - HALF_LINEWIDTH, y + SQUARE_SIZE - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color_bright);
-                    d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color_bright);
-                    d.draw_rectangle(x + SQUARE_SIZE - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color_bright);
+                    d.draw_rectangle(
+                        x + HALF_LINEWIDTH,
+                        y + HALF_LINEWIDTH,
+                        SQUARE_SIZE - 2 * HALF_LINEWIDTH,
+                        SQUARE_SIZE - 2 * HALF_LINEWIDTH,
+                        color,
+                    );
+                    d.draw_rectangle(
+                        x - HALF_LINEWIDTH,
+                        y - HALF_LINEWIDTH,
+                        SQUARE_SIZE,
+                        2 * HALF_LINEWIDTH,
+                        dash_color_bright,
+                    );
+                    d.draw_rectangle(
+                        x - HALF_LINEWIDTH,
+                        y + SQUARE_SIZE - HALF_LINEWIDTH,
+                        SQUARE_SIZE,
+                        2 * HALF_LINEWIDTH,
+                        dash_color_bright,
+                    );
+                    d.draw_rectangle(
+                        x - HALF_LINEWIDTH,
+                        y - HALF_LINEWIDTH,
+                        2 * HALF_LINEWIDTH,
+                        SQUARE_SIZE,
+                        dash_color_bright,
+                    );
+                    d.draw_rectangle(
+                        x + SQUARE_SIZE - HALF_LINEWIDTH,
+                        y - HALF_LINEWIDTH,
+                        2 * HALF_LINEWIDTH,
+                        SQUARE_SIZE,
+                        dash_color_bright,
+                    );
                 }
             }
         }
@@ -884,9 +1009,7 @@ impl Tetris {
 
                 let color = if let Some(hold_id) = self.hold_tetromino {
                     let r_offset = SIZE - TETROMINO_FILL_ROWS[hold_id][0] as usize;
-                    if r < r_offset {
-                        Color::BLACK
-                    } else if TETROMINOES[hold_id][0][r - r_offset][c] == 0 {
+                    if r < r_offset || TETROMINOES[hold_id][0][r - r_offset][c] == 0 {
                         Color::BLACK
                     } else {
                         TETROMINO_COLORS[hold_id]
@@ -895,11 +1018,41 @@ impl Tetris {
                     Color::BLACK
                 };
 
-                d.draw_rectangle(x + HALF_LINEWIDTH, y + HALF_LINEWIDTH, SQUARE_SIZE - 2 * HALF_LINEWIDTH, SQUARE_SIZE - 2 * HALF_LINEWIDTH, color);
-                d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color_bright);
-                d.draw_rectangle(x - HALF_LINEWIDTH, y + SQUARE_SIZE - HALF_LINEWIDTH, SQUARE_SIZE, 2 * HALF_LINEWIDTH, dash_color_bright);
-                d.draw_rectangle(x - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color_bright);
-                d.draw_rectangle(x + SQUARE_SIZE - HALF_LINEWIDTH, y - HALF_LINEWIDTH, 2 * HALF_LINEWIDTH, SQUARE_SIZE, dash_color_bright);
+                d.draw_rectangle(
+                    x + HALF_LINEWIDTH,
+                    y + HALF_LINEWIDTH,
+                    SQUARE_SIZE - 2 * HALF_LINEWIDTH,
+                    SQUARE_SIZE - 2 * HALF_LINEWIDTH,
+                    color,
+                );
+                d.draw_rectangle(
+                    x - HALF_LINEWIDTH,
+                    y - HALF_LINEWIDTH,
+                    SQUARE_SIZE,
+                    2 * HALF_LINEWIDTH,
+                    dash_color_bright,
+                );
+                d.draw_rectangle(
+                    x - HALF_LINEWIDTH,
+                    y + SQUARE_SIZE - HALF_LINEWIDTH,
+                    SQUARE_SIZE,
+                    2 * HALF_LINEWIDTH,
+                    dash_color_bright,
+                );
+                d.draw_rectangle(
+                    x - HALF_LINEWIDTH,
+                    y - HALF_LINEWIDTH,
+                    2 * HALF_LINEWIDTH,
+                    SQUARE_SIZE,
+                    dash_color_bright,
+                );
+                d.draw_rectangle(
+                    x + SQUARE_SIZE - HALF_LINEWIDTH,
+                    y - HALF_LINEWIDTH,
+                    2 * HALF_LINEWIDTH,
+                    SQUARE_SIZE,
+                    dash_color_bright,
+                );
             }
         }
 

@@ -15,3 +15,9 @@ Check Tetris environment performance (~9.3M SPS on a M4 Max)
 ```sh
 uv run -m playhouse.environments.tetris
 ```
+
+Watch Tetris render
+
+```sh
+uv run -m playhouse.environments.tetris.watch
+```

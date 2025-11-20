@@ -1,0 +1,72 @@
+"""Interactive Tetris player with rendering."""
+
+import time
+
+import numpy as np
+
+from playhouse.environments.tetris.tetris import Tetris
+
+
+def main():
+    """Run a single Tetris environment with random actions and rendering."""
+    print("Starting Tetris with random agent...")
+    print("Controls:")
+    print("  ESC - Exit")
+    print("  TAB - Toggle fullscreen")
+    print()
+
+    # Create a single environment
+    env = Tetris(num_envs=1, n_init_garbage=0)
+
+    # Reset environment
+    obs, _ = env.reset(seed=np.random.randint(0, 1000000))
+
+    # Run until the window is closed
+    step_count = 0
+    episode_count = 0
+    total_reward = 0.0
+
+    try:
+        while True:
+            # Take random action
+            action = np.array([env.single_action_space.sample()])
+
+            # Step environment
+            obs, rewards, terminals, truncations, info = env.step(action)
+
+            # Render
+            env.render()
+
+            # Track stats
+            step_count += 1
+            total_reward += rewards[0]
+
+            # Check if episode ended
+            if terminals[0] or truncations[0]:
+                episode_count += 1
+                print(f"Episode {episode_count} ended after {step_count} steps")
+                print(f"  Total reward: {total_reward:.2f}")
+
+                # Print info if available
+                if info:
+                    for info_dict in info:
+                        print(f"  Score: {info_dict.get('score', 0):.0f}")
+                        print(f"  Lines: {info_dict.get('lines_deleted', 0):.0f}")
+                        print(f"  Level: {info_dict.get('game_level', 0):.0f}")
+
+                # Reset for next episode
+                obs, _ = env.reset(seed=np.random.randint(0, 1000000))
+                step_count = 0
+                total_reward = 0.0
+
+            # Small delay to make it watchable (30 FPS)
+            time.sleep(1.0 / 30.0)
+
+    except KeyboardInterrupt:
+        print("\nExiting...")
+    finally:
+        env.close()
+
+
+if __name__ == "__main__":
+    main()
