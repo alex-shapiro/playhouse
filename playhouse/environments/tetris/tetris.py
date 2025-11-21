@@ -40,8 +40,7 @@ class Tetris:
         self.observations = [
             np.zeros(obs_size, dtype=np.float32) for _ in range(num_envs)
         ]
-        # Create list of single-element arrays for actions (one per environment)
-        self.actions = [np.zeros(1, dtype=np.uint8) for _ in range(num_envs)]
+        self.actions = np.zeros(num_envs, dtype=np.uint8)
         self.rewards = np.zeros(num_envs, dtype=np.float32)
         self.terminals = np.zeros(num_envs, dtype=np.uint8)
         self.truncations = np.zeros(num_envs, dtype=np.uint8)
