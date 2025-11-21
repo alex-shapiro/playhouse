@@ -17,7 +17,7 @@ class MiniModel(nn.Module):
         obs_space = env.observation_space
         action_space = env.action_space
 
-        # Encoder
+        # Encoder layer
         if isinstance(obs_space, gym.spaces.Box):
             self.encoder = BoxEncoder(obs_space, hidden_size)
         elif isinstance(obs_space, gym.spaces.Dict):
@@ -25,7 +25,7 @@ class MiniModel(nn.Module):
         else:
             raise NotImplementedError(f"model cannot encode from {obs_space}")
 
-        # Decoder
+        # Decoder layer
         if isinstance(action_space, gym.spaces.Box):
             self.decoder = BoxDecoder(action_space, hidden_size)
         elif isinstance(action_space, gym.spaces.Discrete):
@@ -35,7 +35,7 @@ class MiniModel(nn.Module):
         else:
             raise NotImplementedError(f"model cannot decode into {action_space}")
 
-        # Value
+        # Value layer
         self.value = pytorch.init_linear(nn.Linear(hidden_size, 1), std=1)
 
     def forward(self, obs: Tensor, state: Tensor | None) -> tuple[Tensor, Tensor]:
