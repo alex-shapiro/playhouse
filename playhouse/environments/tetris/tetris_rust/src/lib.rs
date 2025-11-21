@@ -6,7 +6,7 @@ use pyo3::types::PyDict;
 use rayon::prelude::*;
 
 mod tetris;
-pub mod tetrominoes;
+pub mod tetromino;
 
 use tetris::{Action, Tetris};
 

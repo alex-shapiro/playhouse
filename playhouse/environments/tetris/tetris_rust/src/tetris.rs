@@ -1,4 +1,4 @@
-use crate::tetrominoes::{
+use crate::tetromino::{
     NUM_ROTATIONS, NUM_TETROMINOES, SIZE, TETROMINO_COLORS, TETROMINO_FILL_COLS,
     TETROMINO_FILL_ROWS, TETROMINOES,
 };
