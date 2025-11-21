@@ -6,7 +6,7 @@ use pyo3::types::PyDict;
 use rayon::prelude::*;
 
 mod tetris;
-pub mod tetrominoes;
+pub mod tetromino;
 
 use tetris::{Action, Tetris};
 
@@ -133,7 +133,7 @@ impl VecTetrisEnv {
     fn new(
         _py: Python<'_>,
         observations: &Bound<'_, PyAny>,
-        actions: &Bound<'_, PyAny>,
+        actions: &Bound<'_, PyArray1<u8>>,
         rewards: &Bound<'_, PyArray1<f32>>,
         terminals: &Bound<'_, PyArray1<u8>>,
         truncations: &Bound<'_, PyArray1<u8>>,
@@ -154,19 +154,18 @@ impl VecTetrisEnv {
         let mut envs = Vec::with_capacity(num_envs);
 
         // Get mutable slices from the flat arrays
+        let actions_slice = unsafe { actions.as_slice_mut()? };
         let rewards_slice = unsafe { rewards.as_slice_mut()? };
         let terminals_slice = unsafe { terminals.as_slice_mut()? };
 
         for i in 0..num_envs {
             // Get slices for this environment
             let obs_slice = observations.get_item(i)?;
-            let act_slice = actions.get_item(i)?;
 
             let obs_array: &Bound<'_, PyArray1<f32>> = obs_slice.cast()?;
-            let act_array: &Bound<'_, PyArray1<u8>> = act_slice.cast()?;
 
             let obs_ptr = unsafe { obs_array.as_slice_mut()?.as_mut_ptr() };
-            let action_ptr = unsafe { act_array.as_slice_mut()?.as_mut_ptr() };
+            let action_ptr = &mut actions_slice[i] as *mut u8;
             let reward_ptr = &mut rewards_slice[i] as *mut f32;
             let terminal_ptr = &mut terminals_slice[i] as *mut u8;
 
@@ -230,7 +229,7 @@ impl VecTetrisEnv {
                 "env_id out of range",
             ));
         }
-        // Rendering not implemented in Rust version
+        self.envs[env_id].env.render();
         Ok(())
     }
 }
