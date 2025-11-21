@@ -8,18 +8,14 @@ from playhouse.environments.tetris.tetris import Tetris
 
 
 def main():
-    """Run a single Tetris environment with random actions and rendering."""
-    print("Starting Tetris with random agent...")
+    """Render a single Tetris environment with random policy"""
     print("Controls:")
     print("  ESC - Exit")
     print("  TAB - Toggle fullscreen")
     print()
 
-    # Create a single environment
     env = Tetris(num_envs=1, n_init_garbage=0)
-
-    # Reset environment
-    obs, _ = env.reset(seed=np.random.randint(0, 1000000))
+    env.reset(seed=np.random.randint(0, 1000000))
 
     # Run until the window is closed
     step_count = 0
@@ -28,11 +24,8 @@ def main():
 
     try:
         while True:
-            # Take random action
             action = np.array([env.single_action_space.sample()])
-
-            # Step environment
-            obs, rewards, terminals, truncations, info = env.step(action)
+            _, rewards, terminals, truncations, info = env.step(action)
 
             # Render
             env.render()
@@ -64,8 +57,6 @@ def main():
 
     except KeyboardInterrupt:
         print("\nExiting...")
-    finally:
-        env.close()
 
 
 if __name__ == "__main__":
