@@ -22,41 +22,43 @@ def main():
     episode_count = 0
     total_reward = 0.0
 
-    try:
-        while True:
-            action = np.array([env.single_action_space.sample()])
-            _, rewards, terminals, truncations, info = env.step(action)
+    truncations = np.zeros(1)
 
-            # Render
-            env.render()
+    while truncations == 0:
+        action = np.array([env.action_space.sample()])
+        print(action)
+        _, rewards, terminals, truncations, info = env.step(action)
 
-            # Track stats
-            step_count += 1
-            total_reward += rewards[0]
+        # Render
+        env.render()
 
-            # Check if episode ended
-            if terminals[0] or truncations[0]:
-                episode_count += 1
-                print(f"Episode {episode_count} ended after {step_count} steps")
-                print(f"  Total reward: {total_reward:.2f}")
+        # Track stats
+        step_count += 1
+        total_reward += rewards[0]
 
-                # Print info if available
-                if info:
-                    for info_dict in info:
-                        print(f"  Score: {info_dict.get('score', 0):.0f}")
-                        print(f"  Lines: {info_dict.get('lines_deleted', 0):.0f}")
-                        print(f"  Level: {info_dict.get('game_level', 0):.0f}")
+        # Check if episode ended
+        if terminals[0] or truncations[0]:
+            episode_count += 1
+            print(f"Episode {episode_count} ended after {step_count} steps")
+            print(f"  Total reward: {total_reward:.2f}")
 
-                # Reset for next episode
-                obs, _ = env.reset(seed=np.random.randint(0, 1000000))
-                step_count = 0
-                total_reward = 0.0
+            # Print info if available
+            if info:
+                for info_dict in info:
+                    print(f"  Score: {info_dict.get('score', 0):.0f}")
+                    print(f"  Lines: {info_dict.get('lines_deleted', 0):.0f}")
+                    print(f"  Level: {info_dict.get('game_level', 0):.0f}")
 
-            # Small delay to make it watchable (30 FPS)
-            time.sleep(1.0 / 30.0)
+            # Reset for next episode
+            obs, _ = env.reset(seed=np.random.randint(0, 1000000))
+            step_count = 0
+            total_reward = 0.0
 
-    except KeyboardInterrupt:
-        print("\nExiting...")
+        # Small delay to make it watchable (30 FPS)
+        time.sleep(1.0 / 30.0)
+
+    # except KeyboardInterrupt:
+    #     print("\nExiting...")
 
 
 if __name__ == "__main__":

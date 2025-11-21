@@ -7,9 +7,7 @@ from playhouse.environments.tetris.tetris import Tetris
 TIME = 10
 num_envs = 4096
 env = Tetris(num_envs=num_envs)
-actions = [
-    [env.single_action_space.sample() for _ in range(num_envs)] for _ in range(1000)
-]
+actions = [[env.action_space.sample() for _ in range(num_envs)] for _ in range(1000)]
 obs, _ = env.reset(seed=np.random.randint(0, 1000))
 
 

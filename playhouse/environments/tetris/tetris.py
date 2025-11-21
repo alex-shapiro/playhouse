@@ -20,13 +20,13 @@ class Tetris:
         buf=None,
         seed=0,
     ):
-        self.single_observation_space = gymnasium.spaces.Box(
+        self.obs_space = gymnasium.spaces.Box(
             low=0,
             high=1,
             shape=(n_cols * n_rows + 6 + 7 * 4 + n_noise_obs,),
             dtype=np.float32,
         )
-        self.single_action_space = gymnasium.spaces.Discrete(7)
+        self.action_space = gymnasium.spaces.Discrete(7)
         self.render_mode = render_mode
         self.log_interval = log_interval
         self.num_agents = num_envs
