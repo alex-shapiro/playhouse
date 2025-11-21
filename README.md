@@ -10,7 +10,7 @@ Rebuild Rust dependencies
 uv sync --reinstall-package tetris_rust
 ```
 
-Check Tetris environment performance (~9.3M SPS on a M4 Max)
+Check Tetris environment performance (~11M SPS on a M4 Max)
 
 ```sh
 uv run -m playhouse.environments.tetris

@@ -17,8 +17,6 @@ tick = 0
 
 while time.time() < end:
     action = np.array(actions[tick % 1000])
-    env.render()
-    # print(np.array(obs[0][0:200]).reshape(20, 10), obs[0][200:206], obs[0][206:])
     obs, _, _, _, _ = env.step(action)
     tick += 1
 
