@@ -49,6 +49,7 @@ class LSTMWrapper(nn.Module):
         # create a LSTM for processing sequences
         # create a LSTM cell for processing individual inputs
         # force them to share 1st layer weights & update together during training
+        self.input_size = input_size
         self.lstm = nn.LSTM(input_size, hidden_size)
         self.cell = nn.LSTMCell(input_size, hidden_size)
         self.cell.weight_ih = self.lstm.__getattribute__("weight_ih_l0")
@@ -105,7 +106,7 @@ class LSTMWrapper(nn.Module):
             lstm_state = (lstm_h, lstm_c)
 
         obs = obs.reshape(B * TT, *self.obs_shape)
-        hidden = self.policy.encoder(obs)
+        hidden = self.policy.encode(obs)
         assert hidden.shape == (B * TT, self.input_size)
         hidden = hidden.reshape(B, TT, self.input_size)
 
@@ -116,7 +117,7 @@ class LSTMWrapper(nn.Module):
         hidden = hidden.transpose(0, 1)
 
         flat_hidden = hidden.reshape(B * TT, self.hidden_size)
-        logits, values = self.policy.decoder(flat_hidden)
+        logits, values = self.policy.decode(flat_hidden)
         values = values.reshape(B, TT)
 
         state.hidden = hidden
