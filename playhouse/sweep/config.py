@@ -7,7 +7,7 @@ from playhouse.sweep import space
 
 type SweepMetric = Literal["score"]
 
-type SweepGoal = Literal["maximize"]
+type SweepGoal = Literal["maximize", "minimize"]
 
 type ParamDistribution = Literal[
     "uniform",
