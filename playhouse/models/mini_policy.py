@@ -8,7 +8,7 @@ from torch.distributions import Normal
 from playhouse import pytorch
 
 
-class MiniModel(nn.Module):
+class MiniPolicy(nn.Module):
     """Mini PyTorch policy model. Flattens obs and applies a linear layer"""
 
     def __init__(self, env: gym.Env, hidden_size: int = 128):
@@ -36,7 +36,7 @@ class MiniModel(nn.Module):
             raise NotImplementedError(f"model cannot decode into {action_space}")
 
         # Value layer
-        self.value = pytorch.init_linear(nn.Linear(hidden_size, 1), std=1)
+        self.value = pytorch.init_layer(nn.Linear(hidden_size, 1), std=1)
 
     def forward(self, obs: Tensor, state: Tensor | None) -> tuple[Tensor, Tensor]:
         hidden = self.encoder(obs)
@@ -49,7 +49,7 @@ class BoxEncoder(nn.Module):
     def __init__(self, obs_space: gym.spaces.Box, hidden_size: int):
         obs_size = int(np.prod(tuple(obs_space.shape)))  # pyright: ignore[reportArgumentType]
         self.encoder = nn.Sequential(
-            pytorch.init_linear(nn.Linear(obs_size, hidden_size)),
+            pytorch.init_layer(nn.Linear(obs_size, hidden_size)),
             nn.GELU(),
         )
 
@@ -71,7 +71,7 @@ class BoxDecoder(nn.Module):
     def __init__(self, action_space: gym.spaces.Box, hidden_size: int):
         super().__init__()
         d0 = action_space.shape[0]
-        self.mean = pytorch.init_linear(nn.Linear(hidden_size, d0), std=0.01)
+        self.mean = pytorch.init_layer(nn.Linear(hidden_size, d0), std=0.01)
         self.logstd = nn.Parameter(torch.zeros(1, d0))
 
     def forward(self, hidden: Tensor) -> Normal:
@@ -84,7 +84,7 @@ class BoxDecoder(nn.Module):
 class DiscreteDecoder(nn.Module):
     def __init__(self, action_space: gym.spaces.Discrete, hidden_size: int):
         n = int(action_space.n)
-        self.decoder = pytorch.init_linear(nn.Linear(hidden_size, n), std=0.01)
+        self.decoder = pytorch.init_layer(nn.Linear(hidden_size, n), std=0.01)
 
     def forward(self, hidden: Tensor) -> Tensor:
         return self.decoder(hidden)
@@ -95,7 +95,7 @@ class MultiDiscreteDecoder(nn.Module):
         super().__init__()
         self.action_nvec = tuple(action_space.nvec)
         num_atns = sum(self.action_nvec)
-        self.decoder = pytorch.init_linear(nn.Linear(hidden_size, num_atns), std=0.01)
+        self.decoder = pytorch.init_layer(nn.Linear(hidden_size, num_atns), std=0.01)
 
     def forward(self, hidden: Tensor) -> Tensor:
         return self.decoder(hidden).split(self.action_nvec, dim=1)
