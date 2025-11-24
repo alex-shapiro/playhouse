@@ -8,8 +8,10 @@ from torch import Tensor
 L = TypeVar("L", bound=nn.Module)
 
 
-def init_linear(
-    layer: nn.Linear, std: float = np.sqrt(2), bias_const: float = 0.0
+def init_layer(
+    layer: nn.Linear | nn.Conv2d,
+    std: float = np.sqrt(2),
+    bias_const: float = 0.0,
 ) -> nn.Linear:
     """
     Initialize a linear layer as an orthogonal matrix (columns and rows are orthonormal):
