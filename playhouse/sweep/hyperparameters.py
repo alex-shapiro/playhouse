@@ -40,3 +40,7 @@ class Hyperparameters:
             params[name] = space.unnormalize(sample[idx])
             idx += 1
         return params
+
+    def index(self, name: str):
+        keys = list(self.spaces.keys())
+        return keys.index(name) if name in keys else None

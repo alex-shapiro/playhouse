@@ -1,8 +1,10 @@
 import math
 
 from scipy.stats.qmc import Sobol
+from sklearn.linear_model import LogisticRegression
 
 from playhouse.sweep.config import SweepConfig
+from playhouse.sweep.hyperparameters import Hyperparameters
 
 
 class Protein:
@@ -21,6 +23,7 @@ class Protein:
         optimizer_reset_freq: int = 50,
         cost_param: str = "train/total_timesteps",
     ):
+        self.hyperparameters = Hyperparameters(config)
         self.device = config.device
         self.prune_pareto = config.prune_pareto
         self.max_suggestion_cost = config.max_suggestion_cost
@@ -34,7 +37,6 @@ class Protein:
         self.gp_max_ops = gp_max_ops
         self.infer_batch_size = infer_batch_size
         self.optimizer_reset_freq = optimizer_reset_freq
-        self.cost_param = cost_param
 
         self.success_observations = []
         self.failure_observations = []
@@ -43,4 +45,16 @@ class Protein:
         self.min_score, self.max_score = math.inf, -math.inf
         self.log_c_min, self.log_c_max = math.inf, -math.inf
 
-        self.sobol = Sobol()
+        # sobol sequence for quasi-random exploration
+        # TODO: test if this is better than np.random
+        self.sobol = Sobol(d=self.hyperparameters.num, scramble=True)
+
+        self.cost_param_idx = self.hyperparameters.index(cost_param)
+        self.cost_random_suggestion = None
+        if self.cost_param_idx is not None:
+            self.cost_random_suggestion = self.hyperparameters.means[
+                self.cost_param_idx
+            ]
+
+        self.use_success_prob = config.downsample == 1
+        self.success_classifier = LogisticRegression(class_weight="balanced")
