@@ -1,5 +1,7 @@
 import math
 
+from scipy.stats.qmc import Sobol
+
 from playhouse.sweep.config import SweepConfig
 
 
@@ -40,3 +42,5 @@ class Protein:
         self.suggestion_idx = 0
         self.min_score, self.max_score = math.inf, -math.inf
         self.log_c_min, self.log_c_max = math.inf, -math.inf
+
+        self.sobol = Sobol()
