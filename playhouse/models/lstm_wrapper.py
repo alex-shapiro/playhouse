@@ -4,6 +4,7 @@ import gymnasium as gym
 import torch.nn as nn
 from torch import Tensor
 
+from playhouse.models.cnn_policy import CNNPolicy
 from playhouse.models.mini_policy import MiniPolicy
 
 
@@ -18,16 +19,21 @@ class LSTMWrapper(nn.Module):
     def __init__(
         self,
         env: gym.Env,
-        policy: MiniPolicy,
+        policy: MiniPolicy | CNNPolicy,
         input_size: int = 128,
         hidden_size: int = 128,
     ):
         super().__init__()
-        self.obs_shape = env.observation_space.shape
-        self.act_shape = env.action_space.shape
+        obs_shape = env.observation_space.shape
+        assert obs_shape is not None
+        self.obs_shape = obs_shape
+
+        act_shape = env.action_space.shape
+        assert act_shape is not None
+        self.act_shape = act_shape
+
         self.policy = policy
         self.hidden_size = hidden_size
-        # TODO: self.is_continuous
 
         # initialize biases with constant 0s
         # initialize weights with orthogonal values
@@ -52,7 +58,7 @@ class LSTMWrapper(nn.Module):
 
     def forward_eval(self, obs: Tensor, state: LSTMState) -> tuple[Tensor, Tensor]:
         """Forward impl for evaluation"""
-        hidden = self.policy.encoder(obs, state=state)
+        hidden = self.policy.encode(obs)
         h = state.lstm_h
         c = state.lstm_c
 
@@ -67,13 +73,54 @@ class LSTMWrapper(nn.Module):
         state.hidden = hidden
         state.lstm_h = hidden
         state.lstm_c = c
-        return self.policy.decoder(hidden)
+        return self.policy.decode(hidden)
 
     def forward(self, obs: Tensor, state: LSTMState) -> tuple[Tensor, Tensor]:
         """Forward impl for training"""
         lstm_h = state.lstm_h
         lstm_c = state.lstm_c
-        obs_shape, space_shape = obs.shape, self.obs_shape
-        (obs_n,)
 
-        raise NotImplementedError()
+        assert self.obs_shape
+        d_obs = len(obs.shape)
+        d_obsspace = len(self.obs_shape)
+
+        # B (batch dimension) is required
+        # TT (timestamp dimension) is optional, default is 1
+        if d_obs == d_obsspace + 1:
+            assert obs.shape[1:] == self.obs_shape
+            B = obs.shape[0]
+            TT = 1
+        elif d_obs == d_obsspace + 2:
+            assert obs.shape[2:] == self.obs_shape
+            B = obs.shape[0]
+            TT = obs.shape[1]
+        else:
+            raise ValueError(f"invalid obs tensor shape: {obs.shape}")
+
+        if lstm_h is None:
+            lstm_state = None
+        else:
+            assert B == lstm_h.shape[1]
+            assert B == lstm_c.shape[1]
+            lstm_state = (lstm_h, lstm_c)
+
+        obs = obs.reshape(B * TT, *self.obs_shape)
+        hidden = self.policy.encoder(obs)
+        assert hidden.shape == (B * TT, self.input_size)
+        hidden = hidden.reshape(B, TT, self.input_size)
+
+        # transpose B, TT dimensions for LSTM
+        hidden = hidden.transpose(0, 1)
+        hidden, (lstm_h, lstm_c) = self.lstm.forward(hidden, lstm_state)
+        hidden = hidden.float()
+        hidden = hidden.transpose(0, 1)
+
+        flat_hidden = hidden.reshape(B * TT, self.hidden_size)
+        logits, values = self.policy.decoder(flat_hidden)
+        values = values.reshape(B, TT)
+
+        state.hidden = hidden
+        state.lstm_h = lstm_h.detach()
+        state.lstm_c = lstm_c.detach()
+
+        return logits, values

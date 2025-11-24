@@ -36,13 +36,21 @@ class MiniPolicy(nn.Module):
             raise NotImplementedError(f"model cannot decode into {action_space}")
 
         # Value layer
-        self.value = pytorch.init_layer(nn.Linear(hidden_size, 1), std=1)
+        self.value_fn = pytorch.init_layer(nn.Linear(hidden_size, 1), std=1)
 
     def forward(self, obs: Tensor, state: Tensor | None) -> tuple[Tensor, Tensor]:
         hidden = self.encoder(obs)
         logits = self.decoder(hidden)
-        values = self.value(hidden)
+        values = self.value_fn(hidden)
         return logits, values
+
+    def encode(self, obs: Tensor) -> Tensor:
+        return self.encoder(obs)
+
+    def decode(self, hidden: Tensor) -> tuple[Tensor, Tensor]:
+        action = self.decoder(hidden)
+        value = self.value_fn(hidden)
+        return action, value
 
 
 class BoxEncoder(nn.Module):

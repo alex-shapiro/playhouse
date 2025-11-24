@@ -53,7 +53,7 @@ class CNNPolicy(nn.Module):
             obs = obs[:, :, :: self.downsample, :: self.downsample]
         return self.network(obs.float() / 255.0)
 
-    def decode(self, flat_hidden: Tensor) -> tuple[Tensor, Tensor]:
-        action = self.actor_fn(flat_hidden)
-        value = self.value_fn(flat_hidden)
+    def decode(self, hidden: Tensor) -> tuple[Tensor, Tensor]:
+        action = self.actor_fn(hidden)
+        value = self.value_fn(hidden)
         return action, value
