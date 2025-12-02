@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -74,33 +74,6 @@ class TetrisHyperparameters:
     max_grad_norm: float = 0.5
     update_epochs: int = 4
     hidden_size: int = 128
-
-    def to_dict(self) -> dict[str, float | int]:
-        return {
-            "learning_rate": self.learning_rate,
-            "gamma": self.gamma,
-            "gae_lambda": self.gae_lambda,
-            "clip_coef": self.clip_coef,
-            "vf_coef": self.vf_coef,
-            "ent_coef": self.ent_coef,
-            "max_grad_norm": self.max_grad_norm,
-            "update_epochs": self.update_epochs,
-            "hidden_size": self.hidden_size,
-        }
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> TetrisHyperparameters:
-        return cls(
-            learning_rate=float(d.get("learning_rate", 2.5e-4)),
-            gamma=float(d.get("gamma", 0.99)),
-            gae_lambda=float(d.get("gae_lambda", 0.95)),
-            clip_coef=float(d.get("clip_coef", 0.1)),
-            vf_coef=float(d.get("vf_coef", 0.5)),
-            ent_coef=float(d.get("ent_coef", 0.01)),
-            max_grad_norm=float(d.get("max_grad_norm", 0.5)),
-            update_epochs=int(d.get("update_epochs", 4)),
-            hidden_size=int(d.get("hidden_size", 128)),
-        )
 
 
 # -----------------------------------------------------------------------------
@@ -284,7 +257,7 @@ def run_hyperparameter_sweep(config: TrainConfig) -> TetrisHyperparameters:
     for k, v in best_hypers.items():
         print(f"  {k}: {v}")
 
-    return TetrisHyperparameters.from_dict(best_hypers)
+    return TetrisHyperparameters(**best_hypers)
 
 
 # -----------------------------------------------------------------------------
@@ -301,7 +274,7 @@ def load_hyperparameters() -> TetrisHyperparameters | None:
         with open(HYPERPARAMS_FILE) as f:
             data = json.load(f)
         print(f"Loaded hyperparameters from {HYPERPARAMS_FILE}")
-        return TetrisHyperparameters.from_dict(data)
+        return TetrisHyperparameters(**data)
     except (json.JSONDecodeError, KeyError) as e:
         print(f"Failed to load hyperparameters: {e}")
         return None
@@ -311,7 +284,7 @@ def save_hyperparameters(hypers: TetrisHyperparameters) -> None:
     """Save hyperparameters to disk."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with open(HYPERPARAMS_FILE, "w") as f:
-        json.dump(hypers.to_dict(), f, indent=2)
+        json.dump(asdict(hypers), f, indent=2)
     print(f"Saved hyperparameters to {HYPERPARAMS_FILE}")
 
 
@@ -493,7 +466,7 @@ def main() -> None:
         save_hyperparameters(hypers)
     else:
         print("Using existing hyperparameters:")
-        for k, v in hypers.to_dict().items():
+        for k, v in asdict(hypers).items():
             print(f"  {k}: {v}")
 
     # Train
