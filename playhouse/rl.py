@@ -527,7 +527,7 @@ class Trainer:
         self.amp_context = contextlib.nullcontext()
         if config.amp and config.device == "cuda":
             dtype = torch.bfloat16 if config.precision == "bfloat16" else torch.float32
-            self.amp_context = torch.amp.autocast(device_type="cuda", dtype=dtype)
+            self.amp_context = torch.amp.autocast(device_type="cuda", dtype=dtype)  # pyright: ignore[reportPrivateImportUsage]
 
         if config.precision not in ("float32", "bfloat16"):
             raise ValueError(
@@ -924,11 +924,3 @@ def _dist_sum(value: float | int, device: str | torch.device) -> float:
     tensor = torch.tensor(value, device=device)
     torch.distributed.all_reduce(tensor, op=torch.distributed.ReduceOp.SUM)
     return tensor.item()
-
-
-def _dist_mean(value: float | int, device: str | torch.device) -> float:
-    """Average a value across all distributed processes."""
-    if not torch.distributed.is_initialized():
-        return float(value)
-
-    return _dist_sum(value, device) / torch.distributed.get_world_size()
