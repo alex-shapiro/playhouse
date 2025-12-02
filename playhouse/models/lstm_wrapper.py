@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from typing import Any
 
-import gymnasium as gym
 import torch.nn as nn
 from torch import Tensor
 
+from playhouse.environments import Environment
 from playhouse.models.cnn_policy import CNNPolicy
 from playhouse.models.mini_policy import MiniPolicy
 
@@ -19,12 +19,13 @@ class LSTMState:
 class LSTMWrapper(nn.Module):
     def __init__(
         self,
-        env: gym.Env[Any, Any],
+        env: Environment,
         policy: MiniPolicy | CNNPolicy,
         input_size: int = 128,
         hidden_size: int = 128,
-    ):
+    ) -> None:
         super().__init__()
+        self.hidden_size = hidden_size
         obs_shape = env.observation_space.shape
         assert obs_shape is not None
         self.obs_shape = obs_shape
@@ -34,7 +35,6 @@ class LSTMWrapper(nn.Module):
         self.act_shape = act_shape
 
         self.policy = policy
-        self.hidden_size = hidden_size
 
         # initialize biases with constant 0s
         # initialize weights with orthogonal values

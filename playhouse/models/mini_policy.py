@@ -14,9 +14,7 @@ from playhouse.environments import Environment
 class MiniPolicy(nn.Module):
     """Mini PyTorch policy model. Flattens obs and applies a linear layer"""
 
-    def __init__(
-        self, env: gym.Env[Any, Any] | Environment, hidden_size: int = 128
-    ) -> None:
+    def __init__(self, env: Environment, hidden_size: int = 128) -> None:
         super().__init__()
         self.hidden_size = hidden_size
         obs_space = env.observation_space
