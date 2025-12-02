@@ -23,12 +23,9 @@ type ParamSpaceScale = Literal["auto"]
 @dataclass
 class SweepConfig:
     device: DeviceLikeType
-    prune_pareto: bool = True
-    max_suggestion_cost: int = 3600
     metric: SweepMetric = "score"
     goal: SweepGoal = "maximize"
     params: dict[str, "ParamSpaceConfig"] = {}
-    downsample: int = 1
 
     def param_spaces(self) -> dict[str, space.Space[int | float]]:
         return {k: v.to_space() for k, v in self.params.items()}

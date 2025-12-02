@@ -430,6 +430,9 @@ class ProteinState:
 class ProteinConfig:
     """Configuration for the Protein optimizer."""
 
+    prune_pareto: bool = True
+    max_suggestion_cost: int = 3600
+    downsample: int = 1
     resample_freq: int = 0
     num_random_samples: int = 10
     global_search_scale: int = 1
@@ -470,9 +473,6 @@ class Protein:
 
         self.hyperparameters = Hyperparameters(sweep_config)
         self.device = torch.device(sweep_config.device)
-        self.prune_pareto = sweep_config.prune_pareto
-        self.max_suggestion_cost = sweep_config.max_suggestion_cost
-
         self.config = config
 
         # Sobol sequence for quasi-random exploration
@@ -485,7 +485,7 @@ class Protein:
                 self.hyperparameters.means[self.cost_param_idx]
             )
 
-        self.use_success_prob = sweep_config.downsample == 1
+        self.use_success_prob = config.downsample == 1
         self.success_classifier = LogisticRegression(class_weight="balanced")
 
         # Initialize GP models
@@ -659,7 +659,7 @@ class Protein:
 
         # Get Pareto candidates
         candidates, _ = compute_pareto_points(list(state.success_observations))
-        if self.prune_pareto:
+        if self.config.prune_pareto:
             candidates = prune_pareto_front(candidates)
 
         if not candidates:
@@ -725,7 +725,7 @@ class Protein:
         suggestion_scores = self.hyperparameters.optimize_direction * gp_y_norm
 
         # Apply cost constraints and weighting
-        max_c_mask = gp_c < self.max_suggestion_cost
+        max_c_mask = gp_c < self.config.max_suggestion_cost
         target = (1 + self.config.expansion_rate) * np.random.rand()
         weight = 1 - abs(target - gp_log_c_norm)
         suggestion_scores = suggestion_scores * max_c_mask * weight
@@ -774,10 +774,8 @@ def observe(
     is_failure: bool = False,
     cost_param_idx: int | None = None,
 ) -> ProteinState:
-    """Record an observation from a hyperparameter evaluation.
-
-    This is a pure function that returns a new state without modifying
-    the input state.
+    """
+    Record an observation from a hyperparameter evaluation
 
     Args:
         hyperparameters: Hyperparameters object for conversion.
