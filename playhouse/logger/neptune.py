@@ -1,20 +1,26 @@
-from typing_extensions import Literal
+from dataclasses import dataclass, field
+from typing import Any, Literal
 
 
+@dataclass
 class NeptuneConfig:
     neptune_name: str
     neptune_project: str
     should_upload_model: bool = True
-    tags: list[str] = []
+    tags: list[str] = field(default_factory=list)
 
 
 class NeptuneLogger:
+    run_id: str
+    neptune: Any  # neptune.Run, but avoiding import at module level
+    should_upload_model: bool
+
     def __init__(
         self,
         config: NeptuneConfig,
         load_id: str | None = None,
         mode: Literal["async", "sync", "offline", "read-only", "debug"] = "async",
-    ):
+    ) -> None:
         import neptune as nept
 
         neptune_name = config.neptune_name
@@ -29,22 +35,22 @@ class NeptuneLogger:
             mode=mode,
             tags=config.tags,
         )
-        self.run_id = neptune._sys_id
+        self.run_id = neptune._sys_id  # pyright: ignore[reportPrivateUsage]
         self.neptune = neptune
         self.should_upload_model = config.should_upload_model
 
-    def log(self, logs, step):
+    def log(self, logs: dict[str, Any], step: int) -> None:
         for k, v in logs.items():
             self.neptune[k].append(v, step=step)
 
-    def upload_model(self, model_path):
+    def upload_model(self, model_path: str) -> None:
         self.neptune["model"].track_files(model_path)
 
-    def close(self, model_path):
+    def close(self, model_path: str) -> None:
         if self.should_upload_model:
             self.upload_model(model_path)
         self.neptune.stop()
 
-    def download(self):
+    def download(self) -> str:
         self.neptune["model"].download(destination="artifacts")
         return f"artifacts/{self.run_id}.pt"
