@@ -27,7 +27,7 @@ class SweepConfig:
     goal: SweepGoal = "maximize"
     params: dict[str, "ParamSpaceConfig"] = {}
 
-    def param_spaces(self) -> dict[str, space.Space[int | float]]:
+    def param_spaces(self) -> dict[str, space.Space]:
         return {k: v.to_space() for k, v in self.params.items()}
 
 
@@ -39,12 +39,16 @@ class ParamSpaceConfig:
     mean: float
     scale: ParamSpaceScale = "auto"
 
-    def to_space(self) -> space.Space[int | float]:
+    def to_space(self) -> space.Space:
         match self.distribution:
             case "uniform":
-                return space.Linear(min=self.min, max=self.max, scale=self.scale)
+                return space.Linear(
+                    min=self.min, max=self.max, scale=self.scale, is_integer=False
+                )
             case "int_uniform":
-                return space.Linear(min=self.min, max=self.max, scale=self.scale)
+                return space.Linear(
+                    min=self.min, max=self.max, scale=self.scale, is_integer=True
+                )
             case "uniform_pow2":
                 return space.Pow2(min=self.min, max=self.max, scale=self.scale)
             case "log_normal":

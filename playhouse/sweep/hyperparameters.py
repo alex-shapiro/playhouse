@@ -8,7 +8,7 @@ from playhouse.sweep.space import Space
 class Hyperparameters:
     num: int
     metric: SweepMetric
-    spaces: dict[str, Space[int | float]]
+    spaces: dict[str, Space]
     optimize_direction: int
     means: NDArray[np.floating]
     mins: NDArray[np.floating]
