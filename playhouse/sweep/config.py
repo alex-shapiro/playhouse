@@ -42,11 +42,11 @@ class ParamSpaceConfig:
     def to_space(self) -> space.Space:
         match self.distribution:
             case "uniform":
-                return space.Linear(
+                return space.Uniform(
                     min=self.min, max=self.max, scale=self.scale, is_integer=False
                 )
             case "int_uniform":
-                return space.Linear(
+                return space.Uniform(
                     min=self.min, max=self.max, scale=self.scale, is_integer=True
                 )
             case "uniform_pow2":

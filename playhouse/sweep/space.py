@@ -28,16 +28,16 @@ class Space:
         self.norm_mean = 0.0
 
     def normalize(self, value: float) -> float:
-        """Map value from [min, max] to [-1, 1]."""
+        """Map value from [min, max] to [-1, 1]"""
         raise NotImplementedError()
 
     def unnormalize(self, value: float) -> float | int:
-        """Map value from [-1, 1] to [min, max]."""
+        """Map value from [-1, 1] to [min, max]"""
         raise NotImplementedError()
 
 
-class Linear(Space):
-    """Linear (uniform) distribution space."""
+class Uniform(Space):
+    """Uniform distribution space"""
 
     def __init__(
         self, min: float, max: float, scale: Scale, is_integer: bool = False
