@@ -44,7 +44,7 @@ class TrainConfig:
 
     # Training
     num_epochs: int = 1000
-    num_envs: int = 64
+    num_envs: int = 1024
     batch_size: int = 65536
     bptt_horizon: int = 16
     checkpoint_interval: int = 100
@@ -427,8 +427,8 @@ def parse_args() -> TrainConfig:
     parser.add_argument(
         "--num-envs",
         type=int,
-        default=64,
-        help="Number of parallel environments (default: 64)",
+        default=1024,
+        help="Number of parallel environments (default: 1024)",
     )
     parser.add_argument(
         "--batch-size",
