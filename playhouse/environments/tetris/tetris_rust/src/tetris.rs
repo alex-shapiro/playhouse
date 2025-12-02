@@ -431,8 +431,19 @@ impl Tetris {
         let Some(held) = self.hold_tetromino else {
             return true;
         };
-        for c in 0..(TETROMINO_FILL_COLS[held][self.cur_tetromino_rot] as usize) {
-            for r in 0..(TETROMINO_FILL_ROWS[held][self.cur_tetromino_rot] as usize) {
+        let held_cols = TETROMINO_FILL_COLS[held][self.cur_tetromino_rot] as usize;
+        let held_rows = TETROMINO_FILL_ROWS[held][self.cur_tetromino_rot] as usize;
+
+        // Check if held piece would fit within bounds at current position
+        if self.cur_tetromino_col + held_cols > self.n_cols {
+            return false;
+        }
+        if self.cur_tetromino_row + held_rows > self.n_rows {
+            return false;
+        }
+
+        for c in 0..held_cols {
+            for r in 0..held_rows {
                 if (self.grid
                     [(r + self.cur_tetromino_row) * self.n_cols + c + self.cur_tetromino_col]
                     != 0)

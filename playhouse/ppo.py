@@ -271,6 +271,11 @@ _native_gae_cpu: bool
 _native_gae_cuda: bool
 _native_gae_cpu, _native_gae_cuda = _check_native_gae()
 
+if _native_gae_cuda:
+    print("using CUDA GAE")
+else:
+    print("using CPU GAE")
+
 
 def compute_gae_advantage(
     values: Tensor,
