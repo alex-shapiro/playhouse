@@ -380,18 +380,16 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
             sps = logs["SPS"]
             step = logs["agent_steps"]
 
-            if "environment/ep_return" in logs:
-                ep_return = logs["environment/ep_return"]
-                score = logs["environment/score"]
-
-                if epoch % 10 == 0:
-                    print(
-                        f"Epoch {epoch:4d} | "
-                        f"Step {step:10,d} | "
-                        f"SPS {sps:6.0f} | "
-                        f"Return {ep_return:.2f} | "
-                        f"Score {score:.1f}"
-                    )
+            if epoch % 10 == 0:
+                msg = f"Epoch {epoch:4d} | Step {step:10,d} | SPS {sps:6.0f}"
+                if "environment/ep_return" in logs:
+                    ep_return = logs["environment/ep_return"]
+                    score = logs["environment/score"]
+                else:
+                    ep_return = "NA"
+                    score = "NA"
+                msg += f" | Return {ep_return:.2f} | Score {score:.1f}"
+                print(msg)
 
     # Close and return final model path
     model_path = trainer.close()
