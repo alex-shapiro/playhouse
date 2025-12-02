@@ -1,9 +1,6 @@
-"""Protein: Pareto-based Bayesian optimization for hyperparameter sweeps.
-
-This module provides a functional approach to hyperparameter optimization using
-Gaussian Process regression and Pareto front analysis. Unlike the original
-PufferLib implementation, all functions return new data structures instead of
-mutating inputs.
+"""
+Protein: Pareto-based Bayesian optimization for hyperparameter sweeps.
+Hyperparameter optimization using Gaussian Process regression and Pareto front analysis.
 """
 
 from __future__ import annotations
@@ -36,11 +33,6 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
 EPSILON: float = 1e-6
-
-
-# -----------------------------------------------------------------------------
-# Data Structures
-# -----------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -457,28 +449,24 @@ class ProteinConfig:
 
 
 class Protein:
-    """Pareto-based Bayesian optimizer for hyperparameter sweeps.
+    """
+    Pareto-based Bayesian optimizer for hyperparameter sweeps.
 
-    This optimizer uses Gaussian Process regression to model both the
-    objective score and computational cost, then suggests hyperparameters
-    that balance score improvement with cost efficiency along the Pareto front.
-
-    The implementation follows a functional style where observe() returns
-    a new state rather than mutating internal state.
+    Uses Gaussian Process regression to model both the objective score
+    and computational cost, then suggests hyperparameters that balance
+    score improvement with cost efficiency along the Pareto front.
     """
 
     def __init__(
         self,
         sweep_config: SweepConfig,
-        config: ProteinConfig | None = None,
+        config: ProteinConfig = ProteinConfig(),
     ) -> None:
-        """Initialize the Protein optimizer.
-
-        Args:
-            sweep_config: Configuration defining the hyperparameter search space.
-            config: Optional Protein-specific configuration.
         """
-        config = config or ProteinConfig()
+        Initialize the Protein optimizer
+        sweep_config: Configuration defining the hyperparameter search space.
+        config: Optional Protein-specific configuration.
+        """
 
         self.hyperparameters = Hyperparameters(sweep_config)
         self.device = torch.device(sweep_config.device)
