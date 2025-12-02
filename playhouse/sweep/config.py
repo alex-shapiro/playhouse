@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from torch._prims_common import DeviceLikeType
 from typing_extensions import Literal
@@ -25,7 +25,7 @@ class SweepConfig:
     device: DeviceLikeType
     metric: SweepMetric = "score"
     goal: SweepGoal = "maximize"
-    params: dict[str, "ParamSpaceConfig"] = {}
+    params: dict[str, "ParamSpaceConfig"] = field(default_factory=dict)
 
     def param_spaces(self) -> dict[str, space.Space]:
         return {k: v.to_space() for k, v in self.params.items()}
