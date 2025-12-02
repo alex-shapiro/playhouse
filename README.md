@@ -1,6 +1,12 @@
 # Playhouse
 
-WIP Subset of PufferLib, ported for self-educational purposes
+WIP port of PufferLib, for self-educational purposes
+
+Differences from PufferLib:
+
+- Tetris env is written in parallel Rust (no vector.py required for 1-GPU training)
+- Type checks with `basedpyright`
+- Typed config files
 
 ## Instructions
 
