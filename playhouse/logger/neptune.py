@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from neptune import Run
+
 
 @dataclass
 class NeptuneConfig:
@@ -11,10 +13,6 @@ class NeptuneConfig:
 
 
 class NeptuneLogger:
-    run_id: str
-    neptune: Any  # neptune.Run, but avoiding import at module level
-    should_upload_model: bool
-
     def __init__(
         self,
         config: NeptuneConfig,
@@ -35,9 +33,9 @@ class NeptuneLogger:
             mode=mode,
             tags=config.tags,
         )
-        self.run_id = neptune._sys_id  # pyright: ignore[reportPrivateUsage]
-        self.neptune = neptune
-        self.should_upload_model = config.should_upload_model
+        self.run_id: str = neptune._sys_id  # pyright: ignore[reportPrivateUsage]
+        self.neptune: Run = neptune
+        self.should_upload_model: bool = config.should_upload_model
 
     def log(self, logs: dict[str, Any], step: int) -> None:
         for k, v in logs.items():

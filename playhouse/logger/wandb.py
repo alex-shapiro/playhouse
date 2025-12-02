@@ -1,9 +1,6 @@
 import os
 from dataclasses import dataclass, field
-from typing import Any, Literal
-
-import wandb
-from wandb.util import generate_id
+from typing import Any, Literal, final
 
 
 @dataclass
@@ -14,18 +11,18 @@ class WandbConfig:
     should_upload_model: bool = True
 
 
+@final
 class WandbLogger:
-    wandb: Any  # wandb module
-    run_id: str
-    should_upload_model: bool
-
     def __init__(
         self,
         config: WandbConfig,
         load_id: str | None = None,
         resume: bool | Literal["allow", "never", "must", "auto"] | None = "allow",
     ) -> None:
-        wandb.init(
+        import wandb
+        from wandb.util import generate_id
+
+        self.run = wandb.init(
             id=load_id or generate_id(),
             project=config.wandb_project,
             group=config.wandb_group,
@@ -35,27 +32,25 @@ class WandbLogger:
             tags=config.tags,
             settings=wandb.Settings(console="off"),
         )
-        self.wandb = wandb
-        assert wandb.run is not None
-        self.run_id = wandb.run.id
+        self.wandb_mod = wandb
+        self.run_id = self.run.id
         self.should_upload_model = config.should_upload_model
 
     def log(self, logs: dict[str, Any], step: int) -> None:
-        self.wandb.log(logs, step=step)
+        self.run.log(logs, step=step)
 
     def upload_model(self, model_path: str) -> None:
-        artifact = self.wandb.Artifact(self.run_id, type="model")
+        artifact = self.wandb_mod.Artifact(self.run_id, type="model")
         artifact.add_file(model_path)
-        assert self.wandb.run is not None
-        self.wandb.run.log_artifact(artifact)
+        self.run.log_artifact(artifact)
 
     def close(self, model_path: str) -> None:
         if self.should_upload_model:
             self.upload_model(model_path)
-        self.wandb.finish()
+        self.run.finish()
 
     def download(self) -> str:
-        artifact = self.wandb.use_artifact(f"{self.run_id}:latest")
+        artifact = self.run.use_artifact(f"{self.run.id}:latest")
         data_dir: str = artifact.download()
         model_file = max(os.listdir(data_dir))
         return f"{data_dir}/{model_file}"
