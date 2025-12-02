@@ -8,12 +8,15 @@ from torch import Tensor
 from torch.distributions import Normal
 
 from playhouse import pytorch
+from playhouse.environments import Environment
 
 
 class MiniPolicy(nn.Module):
     """Mini PyTorch policy model. Flattens obs and applies a linear layer"""
 
-    def __init__(self, env: gym.Env[Any, Any], hidden_size: int = 128):
+    def __init__(
+        self, env: gym.Env[Any, Any] | Environment, hidden_size: int = 128
+    ) -> None:
         super().__init__()
         self.hidden_size = hidden_size
         obs_space = env.observation_space
@@ -40,11 +43,17 @@ class MiniPolicy(nn.Module):
         # Value layer
         self.value_fn = pytorch.init_layer(nn.Linear(hidden_size, 1), std=1)
 
-    def forward(self, obs: Tensor, state: Tensor | None) -> tuple[Tensor, Tensor]:
+    def forward(
+        self, obs: Tensor, state: dict[str, Any] | None
+    ) -> tuple[Tensor, Tensor]:
         hidden = self.encoder(obs)
         logits = self.decoder(hidden)
         values = self.value_fn(hidden)
         return logits, values
+
+    def forward_eval(self, obs: Tensor, state: dict[str, Any]) -> tuple[Tensor, Tensor]:
+        """Forward pass for evaluation (same as forward for non-RNN policies)."""
+        return self.forward(obs, state)
 
     def encode(self, obs: Tensor) -> Tensor:
         return self.encoder(obs)
@@ -58,7 +67,7 @@ class MiniPolicy(nn.Module):
 class BoxEncoder(nn.Module):
     def __init__(self, obs_space: gym.spaces.Box, hidden_size: int) -> None:
         super().__init__()
-        obs_size = int(np.prod(tuple(obs_space.shape)))  # pyright: ignore[reportArgumentType]
+        obs_size = int(np.prod(tuple(obs_space.shape)))
         self.encoder = nn.Sequential(
             pytorch.init_layer(nn.Linear(obs_size, hidden_size)),
             nn.GELU(),
