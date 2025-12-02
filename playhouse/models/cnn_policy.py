@@ -1,3 +1,5 @@
+from typing import Any
+
 import gymnasium as gym
 from torch import Tensor, nn
 
@@ -13,7 +15,7 @@ class CNNPolicy(nn.Module):
 
     def __init__(
         self,
-        env: gym.Env,
+        env: gym.Env[Any, Any],
         framestack: int,
         flat_size: int,
         input_size: int = 512,

@@ -1,3 +1,5 @@
+from typing import Any
+
 import gymnasium as gym
 import numpy as np
 import torch
@@ -11,7 +13,7 @@ from playhouse import pytorch
 class MiniPolicy(nn.Module):
     """Mini PyTorch policy model. Flattens obs and applies a linear layer"""
 
-    def __init__(self, env: gym.Env, hidden_size: int = 128):
+    def __init__(self, env: gym.Env[Any, Any], hidden_size: int = 128):
         super().__init__()
         self.hidden_size = hidden_size
         obs_space = env.observation_space
@@ -54,7 +56,8 @@ class MiniPolicy(nn.Module):
 
 
 class BoxEncoder(nn.Module):
-    def __init__(self, obs_space: gym.spaces.Box, hidden_size: int):
+    def __init__(self, obs_space: gym.spaces.Box, hidden_size: int) -> None:
+        super().__init__()
         obs_size = int(np.prod(tuple(obs_space.shape)))  # pyright: ignore[reportArgumentType]
         self.encoder = nn.Sequential(
             pytorch.init_layer(nn.Linear(obs_size, hidden_size)),
@@ -66,7 +69,8 @@ class BoxEncoder(nn.Module):
 
 
 class DictEncoder(nn.Module):
-    def __init__(self, obs_space: gym.spaces.Dict, hidden_size: int):
+    def __init__(self, obs_space: gym.spaces.Dict, hidden_size: int) -> None:
+        super().__init__()
         self.dtype = obs_space.dtype
         obs_size = int(sum(np.prod(tuple(obs_space[v].shape)) for v in obs_space))  # pyright: ignore[reportArgumentType]
         self.encoder = nn.Linear(obs_size, hidden_size)
@@ -90,7 +94,10 @@ class BoxDecoder(nn.Module):
 
 
 class DiscreteDecoder(nn.Module):
-    def __init__(self, action_space: gym.spaces.Discrete, hidden_size: int):
+    def __init__(
+        self, action_space: gym.spaces.Discrete[Any], hidden_size: int
+    ) -> None:
+        super().__init__()
         n = int(action_space.n)
         self.decoder = pytorch.init_layer(nn.Linear(hidden_size, n), std=0.01)
 
