@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from threading import Thread
 from typing import TYPE_CHECKING, Any, Final, Literal, Protocol, final, override
 
+import gymnasium as gym
 import numpy as np
 import psutil
 import torch
@@ -27,8 +28,6 @@ from playhouse.logger import Logger
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-
-    from numpy.typing import NDArray
 
 
 # -----------------------------------------------------------------------------
@@ -47,28 +46,6 @@ class Policy(Protocol):
         self, obs: Tensor, state: dict[str, Any]
     ) -> tuple[Tensor, Tensor]: ...
     def state_dict(self) -> dict[str, Any]: ...
-
-
-class Environment(Protocol):
-    """Protocol for environments.
-
-    In playhouse, environments are already multithreaded, so we expect
-    a simpler interface than PufferLib's vecenv.
-    """
-
-    observation_space: Any
-    action_space: Any
-
-    def reset(self, seed: int | None = None) -> tuple[NDArray[Any], dict[str, Any]]: ...
-    def step(
-        self, action: NDArray[Any]
-    ) -> tuple[
-        NDArray[Any], NDArray[Any], NDArray[Any], NDArray[Any], dict[str, Any]
-    ]: ...
-    def close(self) -> None: ...
-
-    @property
-    def num_envs(self) -> int: ...
 
 
 # -----------------------------------------------------------------------------
@@ -144,7 +121,7 @@ class RLConfig:
 
 @dataclass
 class ProfileEntry:
-    """Single profiling entry."""
+    """Single profiling entry"""
 
     start: float = 0.0
     delta: float = 0.0
@@ -154,16 +131,12 @@ class ProfileEntry:
 
 @final
 class Profile:
-    """Hierarchical profiler for training loop."""
-
-    profiles: dict[str, ProfileEntry]
-    frequency: int
-    stack: list[str]
+    """Hierarchical profiler for training loop"""
 
     def __init__(self, frequency: int = 5) -> None:
-        self.profiles = defaultdict(ProfileEntry)
+        self.profiles: dict[str, ProfileEntry] = defaultdict(ProfileEntry)
         self.frequency = frequency
-        self.stack = []
+        self.stack: list[str] = []
 
     def __iter__(self) -> Iterator[tuple[str, ProfileEntry]]:
         return iter(self.profiles.items())
@@ -269,6 +242,19 @@ class Utilization(Thread):
 # -----------------------------------------------------------------------------
 
 
+# Try to import native C++/CUDA extension, fall back to pure PyTorch
+def _check_native_gae() -> bool:
+    try:
+        import playhouse._C  # pyright: ignore[reportMissingImports]  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+_use_native_gae: bool = _check_native_gae()
+
+
 def compute_gae_advantage(
     values: Tensor,
     rewards: Tensor,
@@ -281,7 +267,8 @@ def compute_gae_advantage(
 ) -> Tensor:
     """Compute GAE advantage with V-trace importance sampling correction.
 
-    This is a pure PyTorch implementation that replaces the CUDA kernel.
+    Uses native C++/CUDA kernel if available, otherwise falls back
+    to pure PyTorch implementation.
 
     Args:
         values: Value estimates [segments, horizon]
@@ -296,6 +283,48 @@ def compute_gae_advantage(
     Returns:
         Advantages [segments, horizon]
     """
+    advantages = torch.zeros_like(values)
+
+    if _use_native_gae:
+        torch.ops.playhouse.compute_gae_advantage(
+            values,
+            rewards,
+            terminals,
+            ratio,
+            advantages,
+            gamma,
+            gae_lambda,
+            vtrace_rho_clip,
+            vtrace_c_clip,
+        )
+        return advantages
+
+    # Pure PyTorch fallback
+    return _compute_gae_advantage_pytorch(
+        values,
+        rewards,
+        terminals,
+        ratio,
+        advantages,
+        gamma,
+        gae_lambda,
+        vtrace_rho_clip,
+        vtrace_c_clip,
+    )
+
+
+def _compute_gae_advantage_pytorch(
+    values: Tensor,
+    rewards: Tensor,
+    terminals: Tensor,
+    ratio: Tensor,
+    advantages: Tensor,
+    gamma: float,
+    gae_lambda: float,
+    vtrace_rho_clip: float,
+    vtrace_c_clip: float,
+) -> Tensor:
+    """Pure PyTorch implementation of GAE with V-trace."""
     device = values.device
     segments, horizon = values.shape
 
@@ -303,7 +332,6 @@ def compute_gae_advantage(
     rho = torch.clamp(ratio, max=vtrace_rho_clip)
     c = torch.clamp(ratio, max=vtrace_c_clip)
 
-    advantages = torch.zeros_like(values)
     last_gae = torch.zeros(segments, device=device)
 
     # Compute advantages backwards through time
@@ -397,7 +425,7 @@ class Trainer:
     def __init__(
         self,
         config: RLConfig,
-        env: Environment,
+        env: gym.vector.VectorEnv[Any, Any, Any],
         policy: Policy,
         logger: Logger | None = None,
     ) -> None:
@@ -411,9 +439,14 @@ class Trainer:
         self.device = torch.device(config.device)
 
         # Environment info
-        obs_space = env.observation_space
-        atn_space = env.action_space
+        obs_space = env.single_observation_space
+        atn_space = env.single_action_space
         num_envs = env.num_envs
+
+        assert obs_space.shape is not None, "observation_space must have a shape"
+        assert atn_space.shape is not None, "action_space must have a shape"
+        self.obs_shape = obs_space.shape
+        self.atn_shape = atn_space.shape
 
         # Compute segments and horizon
         horizon = config.bptt_horizon
@@ -439,13 +472,13 @@ class Trainer:
         self.observations = torch.zeros(
             segments,
             horizon,
-            *obs_space.shape,
+            *self.obs_shape,
             dtype=obs_dtype,
             pin_memory=pin_memory,
             device=buffer_device,
         )
         self.actions = torch.zeros(
-            segments, horizon, *atn_space.shape, device=self.device, dtype=atn_dtype
+            segments, horizon, *self.atn_shape, device=self.device, dtype=atn_dtype
         )
         self.values = torch.zeros(segments, horizon, device=self.device)
         self.logprobs = torch.zeros(segments, horizon, device=self.device)
@@ -717,8 +750,7 @@ class Trainer:
             with self.amp_context:
                 # Reshape for non-RNN forward pass
                 if not config.use_rnn:
-                    obs_shape = self.env.observation_space.shape
-                    mb_obs = mb_obs.reshape(-1, *obs_shape)
+                    mb_obs = mb_obs.reshape(-1, *self.obs_shape)
 
                 state: dict[str, Any] = {
                     "action": mb_actions,
