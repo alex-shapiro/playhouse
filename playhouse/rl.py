@@ -497,13 +497,11 @@ class Trainer:
             )
         elif config.optimizer == "muon":
             try:
-                import heavyball  # pyright: ignore[reportMissingImports]
+                import heavyball
 
                 ForeachMuon = heavyball.ForeachMuon
             except ImportError as e:
-                raise ImportError(
-                    "Muon optimizer requires heavyball package: pip install heavyball"
-                ) from e
+                raise ImportError("Muon optimizer requires heavyball package") from e
 
             self.optimizer = ForeachMuon(
                 self.policy.parameters(),
@@ -512,8 +510,6 @@ class Trainer:
                 eps=config.adam_eps,
                 heavyball_momentum=True,
             )
-        else:
-            raise ValueError(f"Unknown optimizer: {config.optimizer}")
 
         # Learning rate scheduler
         total_epochs = config.total_timesteps // config.batch_size
