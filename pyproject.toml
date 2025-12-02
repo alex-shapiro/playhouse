@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools", "torch"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "playhouse"
 version = "0.1.0"
@@ -31,3 +35,6 @@ dev = [
     "pyo3-stubgen>=0.3.0",
     "ruff>=0.14.5",
 ]
+
+[tool.setuptools.packages.find]
+include = ["playhouse*"]

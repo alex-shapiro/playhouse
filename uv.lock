@@ -1006,7 +1006,7 @@ wheels = [
 [[package]]
 name = "playhouse"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "gpytorch" },
     { name = "gymnasium" },
