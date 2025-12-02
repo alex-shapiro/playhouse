@@ -112,7 +112,7 @@ def create_sweep_config(device: str) -> SweepConfig:
     """Create sweep configuration for Tetris hyperparameters."""
     return SweepConfig(
         device=device,
-        metric="score",
+        metric="ep_return",
         goal="maximize",
         params={
             "learning_rate": ParamSpaceConfig(
@@ -216,20 +216,22 @@ def run_sweep_trial(
     # Create trainer (no logger for sweep trials)
     trainer = Trainer(config=rl_config, env=env, policy=policy, logger=None)
 
-    # Train and track best score
-    best_score = float("-inf")
+    # Train and track best ep_return
+    best_ep_return = float("-inf")
     while trainer.state.global_step < config.sweep_timesteps:
         trainer.evaluate()
         logs = trainer.train()
-        if logs is not None:
-            score = logs.get("environment/episode_return", 0.0)
-            if isinstance(score, (int, float)):
-                best_score = max(best_score, float(score))
+        if logs is not None and "environment/ep_return" in logs:
+            ep_return = logs["environment/ep_return"]
+            best_ep_return = max(best_ep_return, float(ep_return))
 
     cost = float(trainer.state.global_step)
     trainer.close()
 
-    return best_score, cost
+    if best_ep_return == float("-inf"):
+        raise RuntimeError("No ep_return logged during sweep trial")
+
+    return best_ep_return, cost
 
 
 def run_hyperparameter_sweep(config: TrainConfig) -> TetrisHyperparameters:
@@ -389,17 +391,21 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
 
         if logs is not None:
             epoch += 1
-            sps = logs.get("SPS", 0)
-            step = logs.get("agent_steps", 0)
-            score = logs.get("environment/episode_return", 0)
+            sps = logs["SPS"]
+            step = logs["agent_steps"]
 
-            if epoch % 10 == 0:
-                print(
-                    f"Epoch {epoch:4d} | "
-                    f"Step {step:10,d} | "
-                    f"SPS {sps:6.0f} | "
-                    f"Score {score:.1f}"
-                )
+            if "environment/ep_return" in logs:
+                ep_return = logs["environment/ep_return"]
+                score = logs["environment/score"]
+
+                if epoch % 10 == 0:
+                    print(
+                        f"Epoch {epoch:4d} | "
+                        f"Step {step:10,d} | "
+                        f"SPS {sps:6.0f} | "
+                        f"Return {ep_return:.2f} | "
+                        f"Score {score:.1f}"
+                    )
 
     # Close and return final model path
     model_path = trainer.close()

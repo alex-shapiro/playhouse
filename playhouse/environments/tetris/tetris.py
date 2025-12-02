@@ -95,7 +95,7 @@ class Tetris(Environment):
 
         info: dict[str, Any] = {}
         if self._tick % self.log_interval == 0:
-            info["log"] = self._envs.log()
+            info.update(self._envs.log())
 
         return (
             self._observations,
