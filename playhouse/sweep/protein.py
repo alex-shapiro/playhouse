@@ -355,9 +355,9 @@ class GPModels:
             dummy_y = torch.zeros(1, device=self.device)
 
             # Score GP
-            self.likelihood_score = GaussianLikelihood(
-                noise_prior=LogNormalPrior(math.log(1e-2), 0.5)
-            ).to(self.device)
+            self.likelihood_score = GaussianLikelihood(noise_prior=noise_prior).to(
+                self.device
+            )
             self.gp_score = ExactGPModel(
                 dummy_x, dummy_y, self.likelihood_score, self.num_params
             ).to(self.device)
@@ -369,9 +369,9 @@ class GPModels:
             )
 
             # Cost GP
-            self.likelihood_cost = GaussianLikelihood(
-                noise_prior=LogNormalPrior(math.log(1e-2), 0.5)
-            ).to(self.device)
+            self.likelihood_cost = GaussianLikelihood(noise_prior=noise_prior).to(
+                self.device
+            )
             self.gp_cost = ExactGPModel(
                 dummy_x, dummy_y, self.likelihood_cost, self.num_params
             ).to(self.device)
