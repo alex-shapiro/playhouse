@@ -23,6 +23,8 @@ import torch.distributed
 import torch.nn as nn
 from torch import Tensor
 
+from playhouse.logger import Logger
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -32,15 +34,6 @@ if TYPE_CHECKING:
 # -----------------------------------------------------------------------------
 # Type Definitions
 # -----------------------------------------------------------------------------
-
-
-class Logger(Protocol):
-    """Protocol for loggers (WandbLogger, NeptuneLogger, NoopLogger)."""
-
-    run_id: str
-
-    def log(self, logs: dict[str, Any], step: int) -> None: ...
-    def close(self, model_path: str) -> None: ...
 
 
 class Policy(Protocol):
@@ -401,39 +394,6 @@ class Trainer:
     the environment is already multithreaded (no vectorization needed).
     """
 
-    config: RLConfig
-    env: Environment
-    device: torch.device
-    num_envs: int
-    segments: int
-    horizon: int
-    observations: Tensor
-    actions: Tensor
-    values: Tensor
-    logprobs: Tensor
-    rewards: Tensor
-    terminals: Tensor
-    ratio: Tensor
-    lstm_h: Tensor | None
-    lstm_c: Tensor | None
-    minibatch_size: int
-    accumulate_minibatches: int
-    total_minibatches: int
-    minibatch_segments: int
-    uncompiled_policy: Policy
-    policy: Policy
-    optimizer: torch.optim.Optimizer
-    scheduler: torch.optim.lr_scheduler.CosineAnnealingLR
-    total_epochs: int
-    amp_context: contextlib.AbstractContextManager[None] | torch.amp.autocast
-    logger: Logger
-    state: TrainState
-    stats: dict[str, list[float]]
-    losses: dict[str, float]
-    utilization: Utilization
-    profile: Profile
-    model_size: int
-
     def __init__(
         self,
         config: RLConfig,
@@ -523,7 +483,7 @@ class Trainer:
 
         # Policy and compilation
         self.uncompiled_policy = policy
-        self.policy = policy
+        self.policy: Policy = policy
         if config.compile:
             self.policy = torch.compile(policy, mode=config.compile_mode)  # pyright: ignore[reportAttributeAccessIssue]
 
