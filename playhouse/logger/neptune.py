@@ -1,8 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from neptune import Run
-
 
 @dataclass
 class NeptuneConfig:
@@ -20,6 +18,7 @@ class NeptuneLogger:
         mode: Literal["async", "sync", "offline", "read-only", "debug"] = "async",
     ) -> None:
         import neptune as nept
+        from neptune import Run
 
         neptune_name = config.neptune_name
         neptune_project = config.neptune_project
