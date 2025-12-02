@@ -1,12 +1,18 @@
-from typing import Never
+from typing import Any, Literal
 
-import gymnasium
+import gymnasium as gym
 import numpy as np
 import tetris_rust
 from numpy.typing import NDArray
 
+from playhouse.environments import Environment
 
-class Tetris:
+
+class Tetris(Environment):
+    """Vectorized Tetris environment using tetris_rust backend."""
+
+    metadata: dict[str, Any] = {"render_modes": ["human"]}
+
     def __init__(
         self,
         num_envs: int = 1,
@@ -15,41 +21,51 @@ class Tetris:
         use_deck_obs: bool = True,
         n_noise_obs: int = 10,
         n_init_garbage: int = 4,
-        render_mode: str | None = None,
+        render_mode: Literal["human"] | None = None,
         log_interval: int = 32,
-        buf: None = None,
         seed: int = 0,
     ) -> None:
-        self.obs_space = gymnasium.spaces.Box(
-            low=0,
-            high=1,
-            shape=(n_cols * n_rows + 6 + 7 * 4 + n_noise_obs,),
-            dtype=np.float32,
-        )
-        self.action_space = gymnasium.spaces.Discrete(7)
-        self.render_mode = render_mode
-        self.log_interval = log_interval
-        self.num_agents = num_envs
-
         self.n_cols = n_cols
         self.n_rows = n_rows
+        self.render_mode = render_mode
+        self.log_interval = log_interval
+        self.num_envs = num_envs
+
+        # Observation and action spaces (single env)
+        obs_size = n_cols * n_rows + 6 + 7 * 4 + n_noise_obs
+        self.single_observation_space = gym.spaces.Box(
+            low=0,
+            high=1,
+            shape=(obs_size,),
+            dtype=np.float32,
+        )
+        self.single_action_space = gym.spaces.Discrete(7)
+
+        # Batched observation and action spaces
+        self.observation_space = gym.spaces.Box(
+            low=0,
+            high=1,
+            shape=(num_envs, obs_size),
+            dtype=np.float32,
+        )
+        self.action_space = gym.spaces.MultiDiscrete([7] * num_envs)
 
         # Initialize numpy buffers for vectorized environments
-        obs_size = n_cols * n_rows + 6 + 7 * 4 + n_noise_obs
-        # Create list of arrays for observations (one array per environment)
-        self.observations = [
-            np.zeros(obs_size, dtype=np.float32) for _ in range(num_envs)
-        ]
-        self.actions = np.zeros(num_envs, dtype=np.uint8)
-        self.rewards = np.zeros(num_envs, dtype=np.float32)
-        self.terminals = np.zeros(num_envs, dtype=np.uint8)
-        self.truncations = np.zeros(num_envs, dtype=np.uint8)
-        self.envs = tetris_rust.VecTetrisEnv(
-            observations=self.observations,
-            actions=self.actions,
-            rewards=self.rewards,
-            terminals=self.terminals,
-            truncations=self.truncations,
+        self._observations = np.zeros((num_envs, obs_size), dtype=np.float32)
+        self._actions = np.zeros(num_envs, dtype=np.uint8)
+        self._rewards = np.zeros(num_envs, dtype=np.float32)
+        self._terminals = np.zeros(num_envs, dtype=np.uint8)
+        self._truncations = np.zeros(num_envs, dtype=np.uint8)
+
+        # Create list views for rust backend (expects list of arrays)
+        obs_list = [self._observations[i] for i in range(num_envs)]
+
+        self._envs = tetris_rust.VecTetrisEnv(
+            observations=obs_list,
+            actions=self._actions,
+            rewards=self._rewards,
+            terminals=self._terminals,
+            truncations=self._truncations,
             num_envs=num_envs,
             seed=seed,
             n_cols=n_cols,
@@ -58,23 +74,50 @@ class Tetris:
             n_noise_obs=n_noise_obs,
             n_init_garbage=n_init_garbage,
         )
-        self.tick = 0
+        self._tick = 0
 
-    def reset(self, seed: int = 0) -> tuple[list[NDArray[np.floating]], list[Never]]:
-        self.envs.reset(seed)
-        self.tick = 0
-        return self.observations, []
+    def reset(
+        self,
+        *,
+        seed: int | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> tuple[NDArray[np.floating[Any]], dict[str, Any]]:
+        """Reset all environments."""
+        self._envs.reset(seed if seed is not None else 0)
+        self._tick = 0
+        return self._observations, {}
 
-    def step(self, actions: NDArray[np.integer]):
-        self.actions[:] = actions
-        self.tick += 1
-        self.envs.step()
+    def step(
+        self,
+        actions: NDArray[np.integer[Any]],
+    ) -> tuple[
+        NDArray[np.floating[Any]],
+        NDArray[np.floating[Any]],
+        NDArray[np.bool_],
+        NDArray[np.bool_],
+        dict[str, Any],
+    ]:
+        """Step all environments."""
+        self._actions[:] = actions
+        self._tick += 1
+        self._envs.step()
 
-        info = []
-        if self.tick % self.log_interval == 0:
-            info.append(self.envs.log())
+        info: dict[str, Any] = {}
+        if self._tick % self.log_interval == 0:
+            info["log"] = self._envs.log()
 
-        return (self.observations, self.rewards, self.terminals, self.truncations, info)
+        return (
+            self._observations,
+            self._rewards,
+            self._terminals.astype(np.bool_),
+            self._truncations.astype(np.bool_),
+            info,
+        )
 
-    def render(self):
-        self.envs.render(0)
+    def render(self) -> None:
+        """Render the first environment."""
+        self._envs.render(0)
+
+    def close(self) -> None:
+        """Clean up resources."""
+        pass

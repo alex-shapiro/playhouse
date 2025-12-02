@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from threading import Thread
 from typing import TYPE_CHECKING, Any, Final, Literal, Protocol, final, override
 
-import gymnasium as gym
 import numpy as np
 import psutil
 import torch
@@ -24,6 +23,7 @@ import torch.distributed
 import torch.nn as nn
 from torch import Tensor
 
+from playhouse.environments import Environment
 from playhouse.logger import Logger
 
 if TYPE_CHECKING:
@@ -425,7 +425,7 @@ class Trainer:
     def __init__(
         self,
         config: RLConfig,
-        env: gym.vector.VectorEnv[Any, Any, Any],
+        env: Environment,
         policy: Policy,
         logger: Logger | None = None,
     ) -> None:
