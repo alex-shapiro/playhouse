@@ -457,6 +457,12 @@ class Trainer:
                 f"batch_size {batch_size} must be divisible by bptt_horizon {horizon}"
             )
 
+        if segments % num_envs != 0:
+            raise ValueError(
+                f"segments ({segments} = batch_size // horizon) must be divisible "
+                f"by num_envs ({num_envs})"
+            )
+
         self.num_envs = num_envs
         self.segments = segments
         self.horizon = horizon
@@ -593,7 +599,16 @@ class Trainer:
         return (self.state.global_step - self.state.last_log_step) / elapsed
 
     def evaluate(self) -> dict[str, list[float]]:
-        """Run environment rollouts to collect experience."""
+        """Run environment rollouts to collect experience.
+
+        The experience buffer has shape [segments, horizon, *obs_shape] where:
+        - segments = batch_size // horizon
+        - Each env step produces num_envs transitions
+
+        We fill the buffer by treating segments as [num_envs, rows_per_env]
+        where rows_per_env = segments // num_envs. Each env step fills one
+        column (time step) across all num_envs segments in the current row.
+        """
         profile = self.profile
         epoch = self.state.epoch
         config = self.config
@@ -611,73 +626,68 @@ class Trainer:
         profile("env", epoch)
         obs, info = self.env.reset(seed=config.seed + epoch)
 
+        # Calculate how many "rows" of segments we need to fill
+        # Each row contains num_envs segments, filled over horizon steps
+        rows_per_env = self.segments // self.num_envs
+
         # Collect experience
-        segment_idx = 0
-        step_in_segment = 0
+        for row in range(rows_per_env):
+            # Segment indices for this row: [row*num_envs, (row+1)*num_envs)
+            seg_start = row * self.num_envs
+            seg_end = seg_start + self.num_envs
 
-        while segment_idx < self.segments:
-            profile("eval_copy", epoch)
-            obs_tensor = torch.as_tensor(obs, device=device)
+            for t in range(self.horizon):
+                profile("eval_copy", epoch)
+                obs_tensor = torch.as_tensor(obs, device=device)
 
-            profile("eval_forward", epoch)
-            with torch.no_grad(), self.amp_context:
-                state: dict[str, Any] = {}
-                if config.use_rnn:
-                    state["lstm_h"] = self.lstm_h
-                    state["lstm_c"] = self.lstm_c
+                profile("eval_forward", epoch)
+                with torch.no_grad(), self.amp_context:
+                    state: dict[str, Any] = {}
+                    if config.use_rnn:
+                        state["lstm_h"] = self.lstm_h
+                        state["lstm_c"] = self.lstm_c
 
-                logits, value = self.policy.forward_eval(obs_tensor, state)
-                action, logprob, _ = sample_logits(logits)
+                    logits, value = self.policy.forward_eval(obs_tensor, state)
+                    action, logprob, _ = sample_logits(logits)
 
-                if config.use_rnn:
-                    self.lstm_h = state.get("lstm_h")
-                    self.lstm_c = state.get("lstm_c")
+                    if config.use_rnn:
+                        self.lstm_h = state.get("lstm_h")
+                        self.lstm_c = state.get("lstm_c")
 
-            profile("env", epoch)
-            action_np = action.cpu().numpy()
-            next_obs, reward, terminated, truncated, info = self.env.step(action_np)
+                profile("env", epoch)
+                action_np = action.cpu().numpy()
+                next_obs, reward, terminated, truncated, info = self.env.step(action_np)
 
-            profile("eval_copy", epoch)
-            # Clamp rewards
-            reward_tensor = torch.as_tensor(reward, device=device).clamp(-1, 1)
-            done_tensor = torch.as_tensor(
-                terminated | truncated, dtype=torch.float32, device=device
-            )
+                profile("eval_copy", epoch)
+                # Clamp rewards
+                reward_tensor = torch.as_tensor(reward, device=device).clamp(-1, 1)
+                done_tensor = torch.as_tensor(
+                    terminated | truncated, dtype=torch.float32, device=device
+                )
 
-            # Store experience
-            # For simplicity, we assume num_envs == segments for now
-            # A more complete implementation would handle the mapping
-            env_segment = min(segment_idx, self.segments - 1)
+                # Store experience for all num_envs environments at time step t
+                if config.cpu_offload:
+                    self.observations[seg_start:seg_end, t] = torch.as_tensor(obs)
+                else:
+                    self.observations[seg_start:seg_end, t] = obs_tensor
 
-            if config.cpu_offload:
-                self.observations[env_segment, step_in_segment] = torch.as_tensor(obs)
-            else:
-                self.observations[env_segment, step_in_segment] = obs_tensor
+                self.actions[seg_start:seg_end, t] = action
+                self.logprobs[seg_start:seg_end, t] = logprob
+                self.rewards[seg_start:seg_end, t] = reward_tensor
+                self.terminals[seg_start:seg_end, t] = done_tensor
+                self.values[seg_start:seg_end, t] = value.flatten()
 
-            self.actions[env_segment, step_in_segment] = action
-            self.logprobs[env_segment, step_in_segment] = logprob
-            self.rewards[env_segment, step_in_segment] = reward_tensor.mean()
-            self.terminals[env_segment, step_in_segment] = done_tensor.mean()
-            self.values[env_segment, step_in_segment] = value.flatten().mean()
+                self.state.global_step += self.num_envs
+                obs = next_obs
 
-            self.state.global_step += self.num_envs
-
-            # Advance counters
-            step_in_segment += 1
-            if step_in_segment >= self.horizon:
-                step_in_segment = 0
-                segment_idx += 1
-
-            obs = next_obs
-
-            # Collect stats from info
-            profile("eval_misc", epoch)
-            if isinstance(info, dict):
-                for k, v in info.items():
-                    if isinstance(v, (int, float)):
-                        self.stats[k].append(float(v))
-                    elif isinstance(v, np.ndarray):
-                        self.stats[k].extend(v.tolist())
+                # Collect stats from info
+                profile("eval_misc", epoch)
+                if isinstance(info, dict):
+                    for k, v in info.items():
+                        if isinstance(v, (int, float)):
+                            self.stats[k].append(float(v))
+                        elif isinstance(v, np.ndarray):
+                            self.stats[k].extend(v.tolist())
 
         profile.end()
         return self.stats
