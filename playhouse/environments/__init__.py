@@ -13,8 +13,6 @@ class Environment(Protocol):
     """
 
     num_envs: int
-    single_observation_space: gym.spaces.Space[Any]
-    single_action_space: gym.spaces.Space[Any]
     observation_space: gym.spaces.Space[Any]
     action_space: gym.spaces.Space[Any]
 

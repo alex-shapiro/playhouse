@@ -416,10 +416,9 @@ class TrainState:
 
 @final
 class Trainer:
-    """PPO trainer with V-trace importance sampling.
-
-    This is a simplified version of PufferLib's PuffeRL that assumes
-    the environment is already multithreaded (no vectorization needed).
+    """
+    PPO trainer with V-trace importance sampling.
+    Assumes a multithreaded environment.
     """
 
     def __init__(
@@ -439,8 +438,8 @@ class Trainer:
         self.device = torch.device(config.device)
 
         # Environment info
-        obs_space = env.single_observation_space
-        atn_space = env.single_action_space
+        obs_space = env.observation_space
+        atn_space = env.action_space
         num_envs = env.num_envs
 
         assert obs_space.shape is not None, "observation_space must have a shape"

@@ -31,24 +31,15 @@ class Tetris(Environment):
         self.log_interval = log_interval
         self.num_envs = num_envs
 
-        # Observation and action spaces (single env)
+        # Observation and action spaces (single env, used for policy network sizing)
         obs_size = n_cols * n_rows + 6 + 7 * 4 + n_noise_obs
-        self.single_observation_space = gym.spaces.Box(
+        self.observation_space = gym.spaces.Box(
             low=0,
             high=1,
             shape=(obs_size,),
             dtype=np.float32,
         )
-        self.single_action_space = gym.spaces.Discrete(7)
-
-        # Batched observation and action spaces
-        self.observation_space = gym.spaces.Box(
-            low=0,
-            high=1,
-            shape=(num_envs, obs_size),
-            dtype=np.float32,
-        )
-        self.action_space = gym.spaces.MultiDiscrete([7] * num_envs)
+        self.action_space = gym.spaces.Discrete(7)
 
         # Initialize numpy buffers for vectorized environments
         self._observations = np.zeros((num_envs, obs_size), dtype=np.float32)

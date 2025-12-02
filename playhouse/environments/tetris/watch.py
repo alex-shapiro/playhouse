@@ -43,11 +43,11 @@ def main():
             print(f"  Total reward: {total_reward:.2f}")
 
             # Print info if available
-            if info:
-                for info_dict in info:
-                    print(f"  Score: {info_dict.get('score', 0):.0f}")
-                    print(f"  Lines: {info_dict.get('lines_deleted', 0):.0f}")
-                    print(f"  Level: {info_dict.get('game_level', 0):.0f}")
+            if "log" in info:
+                log = info["log"]
+                print(f"  Score: {log.get('score', 0):.0f}")
+                print(f"  Lines: {log.get('lines_deleted', 0):.0f}")
+                print(f"  Level: {log.get('game_level', 0):.0f}")
 
             # Reset for next episode
             obs, _ = env.reset(seed=np.random.randint(0, 1000000))
