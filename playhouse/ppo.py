@@ -249,16 +249,27 @@ class Utilization(Thread):
 
 
 # Try to import native C++/CUDA extension, fall back to pure PyTorch
-def _check_native_gae() -> bool:
+def _check_native_gae() -> tuple[bool, bool]:
+    """Check if native GAE kernels are available.
+
+    Returns:
+        Tuple of (cpu_available, cuda_available)
+    """
     try:
         import playhouse._C  # pyright: ignore[reportMissingImports]  # noqa: F401
-
-        return True
     except ImportError:
-        return False
+        return False, False
+
+    # Check if CUDA kernel was compiled by looking at available backends
+    from torch.utils.cpp_extension import CUDA_HOME, ROCM_HOME
+
+    cuda_available = bool(CUDA_HOME or ROCM_HOME)
+    return True, cuda_available
 
 
-_use_native_gae: bool = _check_native_gae()
+_native_gae_cpu: bool
+_native_gae_cuda: bool
+_native_gae_cpu, _native_gae_cuda = _check_native_gae()
 
 
 def compute_gae_advantage(
@@ -291,7 +302,12 @@ def compute_gae_advantage(
     """
     advantages = torch.zeros_like(values)
 
-    if _use_native_gae:
+    # Use native kernel if available for this device
+    use_native = (values.is_cuda and _native_gae_cuda) or (
+        not values.is_cuda and _native_gae_cpu
+    )
+
+    if use_native:
         torch.ops.playhouse.compute_gae_advantage(
             values,
             rewards,
