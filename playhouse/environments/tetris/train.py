@@ -16,11 +16,14 @@ import argparse
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import torch
 
 from playhouse.environments.tetris.tetris import Tetris
+from playhouse.logger import Logger
+from playhouse.logger.neptune import NeptuneConfig, NeptuneLogger
+from playhouse.logger.noop import NoopLogger
 from playhouse.logger.wandb import WandbConfig, WandbLogger
 from playhouse.models.mini_policy import MiniPolicy
 from playhouse.ppo import RLConfig, Trainer
@@ -52,9 +55,11 @@ class TrainConfig:
     sweep_timesteps: int = 1_000_000
 
     # Logging
+    logger: Literal["noop", "wandb", "neptune"] = "noop"
     wandb_project: str = "tetris"
     wandb_group: str = "ppo"
-    use_wandb: bool = True
+    neptune_name: str = "tetris"
+    neptune_project: str = "ppo"
 
     # Device
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -257,7 +262,7 @@ def run_hyperparameter_sweep(config: TrainConfig) -> TetrisHyperparameters:
     for k, v in best_hypers.items():
         print(f"  {k}: {v}")
 
-    return TetrisHyperparameters(**best_hypers)
+    return TetrisHyperparameters(**best_hypers)  # pyright: ignore[reportArgumentType]
 
 
 # -----------------------------------------------------------------------------
@@ -339,17 +344,25 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
     )
 
     # Create logger
-    logger = None
-    if config.use_wandb:
-        try:
-            wandb_config = WandbConfig(
+    logger: Logger
+    match config.logger:
+        case "wandb":
+            wandb_cfg = WandbConfig(
                 wandb_project=config.wandb_project,
                 wandb_group=config.wandb_group,
             )
-            logger = WandbLogger(wandb_config)
+            logger = WandbLogger(wandb_cfg)
             print(f"  Logging to W&B run: {logger.run_id}")
-        except Exception as e:
-            print(f"  W&B logging disabled: {e}")
+        case "neptune":
+            neptune_cfg = NeptuneConfig(
+                neptune_name=config.neptune_name,
+                neptune_project=config.neptune_project,
+            )
+            logger = NeptuneLogger(neptune_cfg)
+            print(f"  Logging to Neptune run: {logger.run_id}")
+        case "noop":
+            logger = NoopLogger()
+            print(f"  Logging disabled (run_id: {logger.run_id})")
 
     # Create trainer
     trainer = Trainer(config=rl_config, env=env, policy=policy, logger=logger)
@@ -424,9 +437,11 @@ def parse_args() -> TrainConfig:
         help="Batch size (default: 65536)",
     )
     parser.add_argument(
-        "--no-wandb",
-        action="store_true",
-        help="Disable W&B logging",
+        "--logger",
+        type=str,
+        choices=["noop", "wandb", "neptune"],
+        default="noop",
+        help="Logger to use (default: noop)",
     )
     parser.add_argument(
         "--seed",
@@ -443,7 +458,7 @@ def parse_args() -> TrainConfig:
         sweep_trials=args.sweep_trials,
         num_envs=args.num_envs,
         batch_size=args.batch_size,
-        use_wandb=not args.no_wandb,
+        logger=args.logger,
         seed=args.seed,
     )
 
