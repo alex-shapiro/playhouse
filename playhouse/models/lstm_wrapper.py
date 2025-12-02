@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 
 import gymnasium as gym
 import torch.nn as nn
@@ -18,7 +19,7 @@ class LSTMState:
 class LSTMWrapper(nn.Module):
     def __init__(
         self,
-        env: gym.Env,
+        env: gym.Env[Any, Any],
         policy: MiniPolicy | CNNPolicy,
         input_size: int = 128,
         hidden_size: int = 128,
@@ -85,40 +86,40 @@ class LSTMWrapper(nn.Module):
         d_obs = len(obs.shape)
         d_obsspace = len(self.obs_shape)
 
-        # B (batch dimension) is required
-        # TT (timestamp dimension) is optional, default is 1
+        # b (batch dimension) is required
+        # tt (timestamp dimension) is optional, default is 1
         if d_obs == d_obsspace + 1:
             assert obs.shape[1:] == self.obs_shape
-            B = obs.shape[0]
-            TT = 1
+            b = obs.shape[0]
+            tt = 1
         elif d_obs == d_obsspace + 2:
             assert obs.shape[2:] == self.obs_shape
-            B = obs.shape[0]
-            TT = obs.shape[1]
+            b = obs.shape[0]
+            tt = obs.shape[1]
         else:
             raise ValueError(f"invalid obs tensor shape: {obs.shape}")
 
         if lstm_h is None:
             lstm_state = None
         else:
-            assert B == lstm_h.shape[1]
-            assert B == lstm_c.shape[1]
+            assert b == lstm_h.shape[1]
+            assert b == lstm_c.shape[1]
             lstm_state = (lstm_h, lstm_c)
 
-        obs = obs.reshape(B * TT, *self.obs_shape)
+        obs = obs.reshape(b * tt, *self.obs_shape)
         hidden = self.policy.encode(obs)
-        assert hidden.shape == (B * TT, self.input_size)
-        hidden = hidden.reshape(B, TT, self.input_size)
+        assert hidden.shape == (b * tt, self.input_size)
+        hidden = hidden.reshape(b, tt, self.input_size)
 
-        # transpose B, TT dimensions for LSTM
+        # transpose b, tt dimensions for LSTM
         hidden = hidden.transpose(0, 1)
         hidden, (lstm_h, lstm_c) = self.lstm.forward(hidden, lstm_state)
         hidden = hidden.float()
         hidden = hidden.transpose(0, 1)
 
-        flat_hidden = hidden.reshape(B * TT, self.hidden_size)
+        flat_hidden = hidden.reshape(b * tt, self.hidden_size)
         logits, values = self.policy.decode(flat_hidden)
-        values = values.reshape(B, TT)
+        values = values.reshape(b, tt)
 
         state.hidden = hidden
         state.lstm_h = lstm_h.detach()

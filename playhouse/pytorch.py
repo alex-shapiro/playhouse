@@ -1,18 +1,32 @@
-from typing import TypeVar
+from typing import overload
 
 import numpy as np
 import torch
 import torch.nn as nn
 from torch import Tensor
 
-L = TypeVar("L", bound=nn.Module)
+
+@overload
+def init_layer(
+    layer: nn.Linear,
+    std: float = ...,
+    bias_const: float = ...,
+) -> nn.Linear: ...
+
+
+@overload
+def init_layer(
+    layer: nn.Conv2d,
+    std: float = ...,
+    bias_const: float = ...,
+) -> nn.Conv2d: ...
 
 
 def init_layer(
     layer: nn.Linear | nn.Conv2d,
     std: float = np.sqrt(2),
     bias_const: float = 0.0,
-) -> nn.Linear:
+) -> nn.Linear | nn.Conv2d:
     """
     Initialize a linear layer as an orthogonal matrix (columns and rows are orthonormal):
 
@@ -27,7 +41,8 @@ def init_layer(
     Multiplying unit-sized layer activations by sqrt(2) doubles its variance (σ²), so post-ReLU variance stays consistent across layer.
     """
     nn.init.orthogonal_(tensor=layer.weight, gain=std)
-    nn.init.constant_(tensor=layer.bias, val=bias_const)
+    if layer.bias is not None:
+        nn.init.constant_(tensor=layer.bias, val=bias_const)
     return layer
 
 

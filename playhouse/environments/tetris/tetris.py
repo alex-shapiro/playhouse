@@ -9,17 +9,17 @@ from numpy.typing import NDArray
 class Tetris:
     def __init__(
         self,
-        num_envs=1,
-        n_cols=10,
-        n_rows=20,
-        use_deck_obs=True,
-        n_noise_obs=10,
-        n_init_garbage=4,
-        render_mode=None,
-        log_interval=32,
-        buf=None,
-        seed=0,
-    ):
+        num_envs: int = 1,
+        n_cols: int = 10,
+        n_rows: int = 20,
+        use_deck_obs: bool = True,
+        n_noise_obs: int = 10,
+        n_init_garbage: int = 4,
+        render_mode: str | None = None,
+        log_interval: int = 32,
+        buf: None = None,
+        seed: int = 0,
+    ) -> None:
         self.obs_space = gymnasium.spaces.Box(
             low=0,
             high=1,
@@ -58,13 +58,14 @@ class Tetris:
             n_noise_obs=n_noise_obs,
             n_init_garbage=n_init_garbage,
         )
+        self.tick = 0
 
-    def reset(self, seed: int = 0) -> tuple[list[NDArray], list[Never]]:
+    def reset(self, seed: int = 0) -> tuple[list[NDArray[np.floating]], list[Never]]:
         self.envs.reset(seed)
         self.tick = 0
         return self.observations, []
 
-    def step(self, actions: NDArray):
+    def step(self, actions: NDArray[np.integer]):
         self.actions[:] = actions
         self.tick += 1
         self.envs.step()
