@@ -67,14 +67,6 @@ class Suggestion:
 
 
 @dataclass(frozen=True, slots=True)
-class ObservationResult:
-    """Result of observing a hyperparameter evaluation."""
-
-    success_observations: tuple[Observation, ...]
-    failure_observations: tuple[Observation, ...]
-
-
-@dataclass(frozen=True, slots=True)
 class ScoreStats:
     """Statistics about observed scores and costs."""
 
@@ -240,7 +232,13 @@ def compute_score_stats(observations: Sequence[Observation]) -> ScoreStats:
 
 
 class ExactGPModel(ExactGP):
-    """Exact Gaussian Process model with Matern + linear kernel."""
+    """Exact Gaussian Process model with Matern + linear kernel.
+
+    Uses an additive kernel combining:
+    - Linear kernel: captures global trends in the objective landscape
+    - Matern 3/2 kernel (nu=1.5): captures local smoothness with ARD
+      (Automatic Relevance Determination) for per-dimension lengthscales
+    """
 
     def __init__(
         self,
@@ -251,7 +249,9 @@ class ExactGPModel(ExactGP):
     ) -> None:
         super().__init__(train_x, train_y, likelihood)
         self.mean_module = ConstantMean()
+        # Matern 3/2 (nu=1.5): once-differentiable, good for ML hyperparameters
         matern_kernel = MaternKernel(nu=1.5, ard_num_dims=x_dim)
+        # Linear kernel captures global trends
         linear_kernel = PolynomialKernel(power=1)
         self.covar_module = ScaleKernel(AdditiveKernel(linear_kernel, matern_kernel))
 
@@ -329,6 +329,8 @@ class GPModels:
     gp_max_obs: int
     infer_batch_size: int
     gp_learning_rate: float
+    gp_noise_prior_mean: float
+    gp_noise_prior_std: float
 
     # Models - initialized in __post_init__
     likelihood_score: GaussianLikelihood = field(init=False)
@@ -349,7 +351,9 @@ class GPModels:
 
     def __post_init__(self) -> None:
         with default_tensor_dtype(torch.float64):
-            noise_prior = LogNormalPrior(math.log(1e-2), 0.5)
+            noise_prior = LogNormalPrior(
+                math.log(self.gp_noise_prior_mean), self.gp_noise_prior_std
+            )
 
             dummy_x = torch.ones((1, self.num_params), device=self.device)
             dummy_y = torch.zeros(1, device=self.device)
@@ -430,19 +434,33 @@ class ProteinState:
 class ProteinConfig:
     """Configuration for the Protein optimizer."""
 
+    # Pareto front settings
     prune_pareto: bool = True
     max_suggestion_cost: int = 3600
-    downsample: int = 1
-    resample_freq: int = 0
-    num_random_samples: int = 10
-    global_search_scale: int = 1
     suggestions_per_pareto: int = 256
     expansion_rate: float = 0.25
+
+    # Sampling settings
+    downsample: int = 1
+    num_random_samples: int = 10
+    resample_freq: int = 0
+    cost_perturbation_scale: float = 0.1
+
+    # GP model settings
     gp_training_iter: int = 50
     gp_learning_rate: float = 0.001
     gp_max_obs: int = 750
+    gp_noise_prior_mean: float = 1e-2
+    gp_noise_prior_std: float = 0.5
     infer_batch_size: int = 4096
     optimizer_reset_freq: int = 50
+
+    # Observation filtering
+    min_obs_for_failure_inclusion: int = 100
+    min_obs_for_success_classifier: int = 10
+    recent_obs_ratio: float = 0.5
+
+    # Cost parameter
     cost_param: str = "train/total_timesteps"
 
 
@@ -495,20 +513,18 @@ class Protein:
             gp_max_obs=config.gp_max_obs,
             infer_batch_size=config.infer_batch_size,
             gp_learning_rate=config.gp_learning_rate,
+            gp_noise_prior_mean=config.gp_noise_prior_mean,
+            gp_noise_prior_std=config.gp_noise_prior_std,
         )
 
     def _sample_observations(
         self,
         state: ProteinState,
-        max_size: int | None = None,
-        recent_ratio: float = 0.5,
     ) -> tuple[list[Observation], ScoreStats]:
         """Sample observations for GP training with deduplication.
 
         Args:
             state: Current optimizer state.
-            max_size: Maximum number of observations to return.
-            recent_ratio: Fraction of samples to take from recent observations.
 
         Returns:
             Tuple of (sampled_observations, updated_stats).
@@ -521,28 +537,31 @@ class Protein:
         # Compute stats from full data
         stats = compute_score_stats(observations)
 
-        # When data is scarce, include failed observations
-        if len(observations) < 100 and state.failure_observations:
+        # When data is scarce, include failed observations to improve GP fit
+        if (
+            len(observations) < self.config.min_obs_for_failure_inclusion
+            and state.failure_observations
+        ):
             failure_obs = [
                 replace(obs, output=stats.min_score)
                 for obs in state.failure_observations
             ]
             observations = list(failure_obs) + observations
 
-        # Deduplicate
+        # Deduplicate based on input params, output, and cost
         params = np.array(
             [np.append(obs.input, [obs.output, obs.cost]) for obs in observations]
         )
         dedup_indices = filter_near_duplicates(params)
         observations = [observations[i] for i in dedup_indices]
 
-        if max_size is None:
-            max_size = self.config.gp_max_obs
-
+        max_size = self.config.gp_max_obs
         if len(observations) <= max_size:
             return observations, stats
 
-        recent_size = int(recent_ratio * max_size)
+        # Sample a mix of recent and older observations to balance
+        # exploitation (recent) vs exploration (older diverse samples)
+        recent_size = int(self.config.recent_obs_ratio * max_size)
         recent_obs = observations[-recent_size:]
         older_obs = observations[:-recent_size]
         num_to_sample = max_size - recent_size
@@ -562,9 +581,7 @@ class Protein:
         if not state.success_observations:
             return 0.0, 0.0, state.stats
 
-        sampled_obs, stats = self._sample_observations(
-            state, max_size=self.config.gp_max_obs
-        )
+        sampled_obs, stats = self._sample_observations(state)
         num_sampled = len(sampled_obs)
 
         # Prepare tensors
@@ -612,6 +629,35 @@ class Protein:
 
         return score_loss, cost_loss, stats
 
+    def _suggest_random(self, perturb_cost: bool) -> Suggestion:
+        """Generate a random suggestion using Sobol sequence.
+
+        Args:
+            perturb_cost: Whether to perturb the cost parameter around its mean.
+
+        Returns:
+            A random suggestion.
+        """
+        # Sobol sequence provides better space coverage than uniform random
+        zero_one = self.sobol.random(1)[0]
+        suggestion = 2 * zero_one - 1  # Scale from [0, 1) to [-1, 1)
+
+        if (
+            perturb_cost
+            and self.cost_param_idx is not None
+            and self.cost_random_suggestion is not None
+        ):
+            # Keep cost near the mean during exploration to avoid wasting
+            # compute on very expensive or very cheap (uninformative) runs
+            cost_suggestion = (
+                self.cost_random_suggestion
+                + self.config.cost_perturbation_scale * np.random.randn()
+            )
+            suggestion[self.cost_param_idx] = np.clip(cost_suggestion, -1, 1)
+
+        params = self.hyperparameters.to_dict(suggestion)
+        return Suggestion(params=params, info=SuggestionInfo())
+
     def suggest(self, state: ProteinState) -> tuple[Suggestion, ProteinState]:
         """Suggest a hyperparameter configuration.
 
@@ -624,22 +670,15 @@ class Protein:
         new_idx = state.suggestion_idx + 1
         new_state = replace(state, suggestion_idx=new_idx)
 
-        # Random exploration phase
+        # Random exploration phase using Sobol sequence for better coverage
         if new_idx <= self.config.num_random_samples:
-            zero_one = self.sobol.random(1)[0]
-            suggestion = 2 * zero_one - 1  # Scale from [0, 1) to [-1, 1)
-            if (
-                self.cost_param_idx is not None
-                and self.cost_random_suggestion is not None
-            ):
-                cost_suggestion = self.cost_random_suggestion + 0.1 * np.random.randn()
-                suggestion[self.cost_param_idx] = np.clip(cost_suggestion, -1, 1)
-            params = self.hyperparameters.to_dict(suggestion)
-            return Suggestion(params=params, info=SuggestionInfo()), new_state
+            return self._suggest_random(perturb_cost=True), new_state
 
-        # Resampling from Pareto front
+        # Compute Pareto front once for use in resampling and GP-guided search
+        candidates, _ = compute_pareto_points(list(state.success_observations))
+
+        # Periodic resampling: pick directly from Pareto front for exploitation
         if self.config.resample_freq and new_idx % self.config.resample_freq == 0:
-            candidates, _ = compute_pareto_points(list(state.success_observations))
             if candidates:
                 suggestions = np.stack([obs.input for obs in candidates])
                 best_idx = np.random.randint(0, len(candidates))
@@ -650,24 +689,20 @@ class Protein:
         score_loss, cost_loss, stats = self._train_gp_models(state)
         new_state = replace(new_state, stats=stats)
 
-        # Reset optimizers periodically
+        # Reset optimizers periodically to avoid getting stuck
         if (
             self.config.optimizer_reset_freq
             and new_idx % self.config.optimizer_reset_freq == 0
         ):
             self.gp_models.reset_optimizers()
 
-        # Get Pareto candidates
-        candidates, _ = compute_pareto_points(list(state.success_observations))
+        # Prune Pareto front for GP-guided search
         if self.config.prune_pareto:
             candidates = prune_pareto_front(candidates)
 
         if not candidates:
-            # Fallback to random
-            zero_one = self.sobol.random(1)[0]
-            suggestion = 2 * zero_one - 1
-            params = self.hyperparameters.to_dict(suggestion)
-            return Suggestion(params=params, info=SuggestionInfo()), new_state
+            # Fallback to random when no Pareto front exists
+            return self._suggest_random(perturb_cost=False), new_state
 
         # Sample suggestions around Pareto points
         search_centers = np.stack([obs.input for obs in candidates])
@@ -724,17 +759,25 @@ class Protein:
         # Score suggestions
         suggestion_scores = self.hyperparameters.optimize_direction * gp_y_norm
 
-        # Apply cost constraints and weighting
+        # Apply cost constraints: exclude suggestions exceeding max cost
         max_c_mask = gp_c < self.config.max_suggestion_cost
+
+        # Cost-aware weighting: favor suggestions near a random target cost.
+        # The target varies from 0 to (1 + expansion_rate), encouraging gradual
+        # exploration toward higher-cost (potentially higher-reward) regions.
+        # Weight = 1 when prediction matches target, decreasing with distance.
         target = (1 + self.config.expansion_rate) * np.random.rand()
-        weight = 1 - abs(target - gp_log_c_norm)
+        weight = 1 - np.abs(target - gp_log_c_norm)
         suggestion_scores = suggestion_scores * max_c_mask * weight
 
         # Consider success probability if enabled
+        # Use logistic regression to predict success probability when we have
+        # enough data points of both successes and failures
+        min_obs = self.config.min_obs_for_success_classifier
         if (
             self.use_success_prob
-            and len(state.success_observations) > 9
-            and len(state.failure_observations) > 9
+            and len(state.success_observations) >= min_obs
+            and len(state.failure_observations) >= min_obs
         ):
             success_params = np.array([obs.input for obs in state.success_observations])
             failure_params = np.array([obs.input for obs in state.failure_observations])
@@ -764,67 +807,61 @@ class Protein:
         params = self.hyperparameters.to_dict(best)
         return Suggestion(params=params, info=info), new_state
 
+    def observe(
+        self,
+        state: ProteinState,
+        hypers: dict[str, float | int],
+        score: float,
+        cost: float,
+        is_failure: bool = False,
+    ) -> ProteinState:
+        """Record an observation from a hyperparameter evaluation.
 
-def observe(
-    hyperparameters: Hyperparameters,
-    state: ProteinState,
-    hypers: dict[str, float | int],
-    score: float,
-    cost: float,
-    is_failure: bool = False,
-    cost_param_idx: int | None = None,
-) -> ProteinState:
-    """
-    Record an observation from a hyperparameter evaluation
+        Args:
+            state: Current optimizer state.
+            hypers: The hyperparameter dictionary that was evaluated.
+            score: The objective score achieved.
+            cost: The computational cost incurred.
+            is_failure: Whether the evaluation failed.
 
-    Args:
-        hyperparameters: Hyperparameters object for conversion.
-        state: Current optimizer state.
-        hypers: The hyperparameter dictionary that was evaluated.
-        score: The objective score achieved.
-        cost: The computational cost incurred.
-        is_failure: Whether the evaluation failed.
-        cost_param_idx: Index of cost parameter (for filtering).
-
-    Returns:
-        New ProteinState with the observation recorded.
-    """
-    params = hyperparameters.from_dict(hypers)
-    observation = Observation(
-        input=params,
-        output=score,
-        cost=cost,
-        is_failure=is_failure,
-    )
-
-    # Handle failures
-    if is_failure or not np.isfinite(score) or np.isnan(score):
-        observation = replace(observation, is_failure=True)
-        return replace(
-            state,
-            failure_observations=state.failure_observations + (observation,),
+        Returns:
+            New ProteinState with the observation recorded.
+        """
+        params = self.hyperparameters.from_dict(hypers)
+        observation = Observation(
+            input=params,
+            output=score,
+            cost=cost,
+            is_failure=is_failure,
         )
 
-    # Check for near-duplicates in success observations
-    if state.success_observations:
-        success_params = np.stack([obs.input for obs in state.success_observations])
-        dist = np.linalg.norm(params - success_params, axis=1)
-        same = np.where(dist < EPSILON)[0]
-        if len(same) > 0:
-            # Replace existing observation
-            idx = int(same[0])
-            new_obs = (
-                state.success_observations[:idx]
-                + (observation,)
-                + state.success_observations[idx + 1 :]
+        # Handle failures (explicit or invalid scores)
+        if is_failure or not np.isfinite(score) or np.isnan(score):
+            observation = replace(observation, is_failure=True)
+            return replace(
+                state,
+                failure_observations=state.failure_observations + (observation,),
             )
-            return replace(state, success_observations=new_obs)
 
-    # Ignore observations below minimum cost
-    if cost_param_idx is not None and params[cost_param_idx] <= -1:
-        return state
+        # Check for near-duplicates in success observations and replace if found
+        if state.success_observations:
+            success_params = np.stack([obs.input for obs in state.success_observations])
+            dist = np.linalg.norm(params - success_params, axis=1)
+            same = np.where(dist < EPSILON)[0]
+            if len(same) > 0:
+                idx = int(same[0])
+                new_obs = (
+                    state.success_observations[:idx]
+                    + (observation,)
+                    + state.success_observations[idx + 1 :]
+                )
+                return replace(state, success_observations=new_obs)
 
-    return replace(
-        state,
-        success_observations=state.success_observations + (observation,),
-    )
+        # Ignore observations below minimum cost (normalized cost <= -1)
+        if self.cost_param_idx is not None and params[self.cost_param_idx] <= -1:
+            return state
+
+        return replace(
+            state,
+            success_observations=state.success_observations + (observation,),
+        )
