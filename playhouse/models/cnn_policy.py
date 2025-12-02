@@ -3,6 +3,7 @@ from typing import Any
 import gymnasium as gym
 from torch import Tensor, nn
 
+from playhouse.environments import Environment
 from playhouse.pytorch import init_layer
 
 
@@ -15,7 +16,7 @@ class CNNPolicy(nn.Module):
 
     def __init__(
         self,
-        env: gym.Env[Any, Any],
+        env: Environment,
         framestack: int,
         flat_size: int,
         input_size: int = 512,
@@ -23,8 +24,9 @@ class CNNPolicy(nn.Module):
         output_size: int = 512,
         channels_last: bool = False,
         downsample: int = 1,
-    ):
+    ) -> None:
         super().__init__()
+        self.hidden_size = hidden_size
         self.channels_last = channels_last
         self.downsample = downsample
         self.network = nn.Sequential(
@@ -45,8 +47,14 @@ class CNNPolicy(nn.Module):
         )
         self.value_fn = init_layer(nn.Linear(output_size, 1), std=1)
 
-    def forward(self, obs: Tensor, state=None) -> tuple[Tensor, Tensor]:
+    def forward(
+        self, obs: Tensor, state: dict[str, Any] | None = None
+    ) -> tuple[Tensor, Tensor]:
         return self.decode(self.encode(obs))
+
+    def forward_eval(self, obs: Tensor, state: dict[str, Any]) -> tuple[Tensor, Tensor]:
+        """Forward pass for evaluation (same as forward for non-RNN policies)."""
+        return self.forward(obs, state)
 
     def encode(self, obs: Tensor) -> Tensor:
         if self.channels_last:
