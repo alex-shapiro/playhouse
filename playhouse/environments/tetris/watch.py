@@ -1,8 +1,7 @@
 """Interactive Tetris player with rendering."""
 
 import glob
-
-# import time
+import time
 from pathlib import Path
 
 import numpy as np
@@ -74,7 +73,7 @@ def main():
         obs, rewards, terminals, truncations, info = env.step(action)
 
         # Render
-        # env.render()
+        env.render()
 
         # Track stats
         step_count += 1
@@ -98,7 +97,7 @@ def main():
             total_reward = 0.0
 
         # Small delay to make it watchable (30 FPS)
-        # time.sleep(1.0 / 30.0)
+        time.sleep(1.0 / 30.0)
 
 
 if __name__ == "__main__":
