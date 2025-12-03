@@ -12,7 +12,6 @@ This script:
 
 from __future__ import annotations
 
-import argparse
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -389,78 +388,15 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
 # -----------------------------------------------------------------------------
 
 
-def parse_args() -> TrainConfig:
-    """Parse command line arguments."""
-    default_config = TrainConfig()
-    parser = argparse.ArgumentParser(description="Train PPO agent on Tetris")
-    parser.add_argument(
-        "--sweep",
-        action="store_true",
-        help="Run hyperparameter sweep even if saved hyperparameters exist",
-    )
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        default=default_config.num_epochs,
-        help=f"Number of training epochs (default: {default_config.num_epochs})",
-    )
-    parser.add_argument(
-        "--sweep-trials",
-        type=int,
-        default=default_config.sweep_trials,
-        help=f"Number of sweep trials (default: {default_config.sweep_trials})",
-    )
-    parser.add_argument(
-        "--num-envs",
-        type=int,
-        default=default_config.num_envs,
-        help=f"Number of parallel environments (default: {default_config.num_envs})",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=default_config.batch_size,
-        help=f"Batch size (default: {default_config.batch_size})",
-    )
-    parser.add_argument(
-        "--logger",
-        type=str,
-        choices=["noop", "wandb", "neptune"],
-        default=default_config.logger,
-        help=f"Logger to use (default: {default_config.logger})",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=default_config.seed,
-        help=f"Random seed (default: {default_config.seed})",
-    )
-
-    args = parser.parse_args()
-
-    return TrainConfig(
-        num_epochs=args.epochs,
-        run_sweep=args.sweep,
-        sweep_trials=args.sweep_trials,
-        num_envs=args.num_envs,
-        batch_size=args.batch_size,
-        logger=args.logger,
-        seed=args.seed,
-    )
-
-
 def main() -> None:
     """Main entry point."""
-    config = parse_args()
+    config = TrainConfig()
 
     # Ensure data directory exists
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     # Load or find hyperparameters
-    hypers = None
-    if not config.run_sweep:
-        hypers = load_hyperparameters()
-
+    hypers = load_hyperparameters()
     if hypers is None:
         print("No existing hyperparameters found. Running sweep...")
         hypers = run_hyperparameter_sweep(config)
