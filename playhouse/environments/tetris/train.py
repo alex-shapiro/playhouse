@@ -14,16 +14,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
-from typing import Literal
 
 import torch
 
 from playhouse import io
 from playhouse.environments.tetris.tetris import Tetris
-from playhouse.logger import Logger
-from playhouse.logger.neptune import NeptuneConfig, NeptuneLogger
-from playhouse.logger.noop import NoopLogger
-from playhouse.logger.wandb import WandbConfig, WandbLogger
+from playhouse.logger import init_logger
+from playhouse.logger.neptune import NeptuneConfig
+from playhouse.logger.wandb import WandbConfig
 from playhouse.models.mini_policy import MiniPolicy
 from playhouse.ppo import RLConfig, Trainer
 from playhouse.sweep.config import ParamSpaceConfig, SweepConfig
@@ -54,11 +52,7 @@ class TrainConfig:
     sweep_timesteps: int = 1_000_000
 
     # Logging
-    logger: Literal["noop", "wandb", "neptune"] = "noop"
-    wandb_project: str = "tetris"
-    wandb_group: str = "ppo"
-    neptune_name: str = "tetris"
-    neptune_project: str = "ppo"
+    logger: WandbConfig | NeptuneConfig | None = None
 
     # Device
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -331,25 +325,7 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
     )
 
     # Create logger
-    logger: Logger
-    match config.logger:
-        case "wandb":
-            wandb_cfg = WandbConfig(
-                wandb_project=config.wandb_project,
-                wandb_group=config.wandb_group,
-            )
-            logger = WandbLogger(wandb_cfg)
-            print(f"  Logging to W&B run: {logger.run_id}")
-        case "neptune":
-            neptune_cfg = NeptuneConfig(
-                neptune_name=config.neptune_name,
-                neptune_project=config.neptune_project,
-            )
-            logger = NeptuneLogger(neptune_cfg)
-            print(f"  Logging to Neptune run: {logger.run_id}")
-        case "noop":
-            logger = NoopLogger()
-            print(f"  Logging disabled (run_id: {logger.run_id})")
+    logger = init_logger(config.logger)
 
     # Create trainer
     trainer = Trainer(config=rl_config, env=env, policy=policy, logger=logger)

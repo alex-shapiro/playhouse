@@ -1,8 +1,10 @@
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from playhouse.logger import Logger
 
-@dataclass
+
+@dataclass(frozen=True, slots=True)
 class NeptuneConfig:
     neptune_name: str
     neptune_project: str
@@ -10,7 +12,7 @@ class NeptuneConfig:
     tags: list[str] = field(default_factory=list)
 
 
-class NeptuneLogger:
+class NeptuneLogger(Logger):
     def __init__(
         self,
         config: NeptuneConfig,

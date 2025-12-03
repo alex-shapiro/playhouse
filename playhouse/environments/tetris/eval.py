@@ -21,18 +21,19 @@ def load_latest_model(env: Tetris, device: str) -> MiniPolicy:
 
 
 def main():
+    num_envs = 1
     num_episodes = 100
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    env = Tetris(num_envs=num_episodes)
+    env = Tetris(num_envs=num_envs)
     obs, _ = env.reset(seed=np.random.randint(0, 1000000))
 
     policy = load_latest_model(env, device)
 
     episode_rewards: list[float] = []
     episode_steps: list[int] = []
-    current_rewards = np.zeros(num_episodes)
-    current_steps = np.zeros(num_episodes, dtype=np.int32)
+    current_rewards = np.zeros(num_envs)
+    current_steps = np.zeros(num_envs, dtype=np.int32)
 
     while len(episode_rewards) < num_episodes:
         obs_tensor = torch.as_tensor(obs, device=device)
