@@ -43,7 +43,7 @@ class TrainConfig:
     """Training configuration."""
 
     # Training
-    num_epochs: int = 1000
+    num_epochs: int = 5000
     num_envs: int = 1024
     batch_size: int = 65536
     bptt_horizon: int = 64
@@ -51,7 +51,7 @@ class TrainConfig:
 
     # Sweep
     run_sweep: bool = False
-    sweep_trials: int = 50
+    sweep_trials: int = 200
     sweep_timesteps: int = 1_000_000
 
     # Logging
@@ -75,10 +75,24 @@ class TetrisHyperparameters:
     gae_lambda: float = 0.55
     clip_coef: float = 0.1
     vf_coef: float = 4.74
+    vf_clip_coef: float = 1.5
     ent_coef: float = 0.02
     max_grad_norm: float = 5.0
     update_epochs: int = 4
     hidden_size: int = 256
+
+    # Adam optimizer
+    adam_beta1: float = 0.95
+    adam_beta2: float = 0.9999
+    adam_eps: float = 1e-10
+
+    # V-trace importance sampling
+    vtrace_rho_clip: float = 0.70
+    vtrace_c_clip: float = 1.29
+
+    # Prioritized experience replay
+    prio_alpha: float = 0.99
+    prio_beta0: float = 0.91
 
 
 # -----------------------------------------------------------------------------
@@ -90,62 +104,26 @@ def create_sweep_config(device: str) -> SweepConfig:
     """Create sweep configuration for Tetris hyperparameters."""
     return SweepConfig(
         device=device,
-        metric="ep_return",
+        metric="score",
         goal="maximize",
         params={
-            "learning_rate": ParamSpaceConfig(
-                distribution="log_normal",
-                min=1e-5,
-                max=1e-2,
-                mean=2.5e-4,
-            ),
-            "gamma": ParamSpaceConfig(
-                distribution="uniform",
-                min=0.9,
-                max=0.999,
-                mean=0.99,
-            ),
             "gae_lambda": ParamSpaceConfig(
-                distribution="uniform",
-                min=0.8,
-                max=0.99,
-                mean=0.95,
+                distribution="logit_normal",
+                min=0.01,
+                max=0.995,
+                mean=0.6,
             ),
             "clip_coef": ParamSpaceConfig(
                 distribution="uniform",
-                min=0.05,
-                max=0.3,
+                min=0.01,
+                max=1.0,
                 mean=0.1,
             ),
-            "vf_coef": ParamSpaceConfig(
-                distribution="uniform",
-                min=0.1,
-                max=1.0,
-                mean=0.5,
-            ),
-            "ent_coef": ParamSpaceConfig(
-                distribution="log_normal",
-                min=1e-4,
-                max=0.1,
-                mean=0.01,
-            ),
-            "max_grad_norm": ParamSpaceConfig(
-                distribution="uniform",
-                min=0.1,
-                max=1.0,
-                mean=0.5,
-            ),
-            "update_epochs": ParamSpaceConfig(
-                distribution="int_uniform",
-                min=1,
-                max=10,
-                mean=4,
-            ),
-            "hidden_size": ParamSpaceConfig(
-                distribution="uniform_pow2",
-                min=64,
-                max=512,
-                mean=128,
+            "adam_beta1": ParamSpaceConfig(
+                distribution="logit_normal",
+                min=0.5,
+                max=0.999,
+                mean=0.95,
             ),
         },
     )
@@ -188,7 +166,7 @@ def run_sweep_trial(
         ent_coef=float(hypers.get("ent_coef", 0.01)),
         max_grad_norm=float(hypers.get("max_grad_norm", 0.5)),
         update_epochs=int(hypers.get("update_epochs", 4)),
-        checkpoint_interval=1000000,  # Don't checkpoint during sweep
+        save_checkpoints=False,
     )
 
     # Create trainer (no logger for sweep trials)
@@ -337,12 +315,20 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
         gae_lambda=hypers.gae_lambda,
         clip_coef=hypers.clip_coef,
         vf_coef=hypers.vf_coef,
+        vf_clip_coef=hypers.vf_clip_coef,
         ent_coef=hypers.ent_coef,
         max_grad_norm=hypers.max_grad_norm,
         update_epochs=hypers.update_epochs,
         checkpoint_interval=config.checkpoint_interval,
         minibatch_size=config.batch_size,
         max_minibatch_size=config.batch_size,
+        adam_beta1=hypers.adam_beta1,
+        adam_beta2=hypers.adam_beta2,
+        adam_eps=hypers.adam_eps,
+        vtrace_rho_clip=hypers.vtrace_rho_clip,
+        vtrace_c_clip=hypers.vtrace_c_clip,
+        prio_alpha=hypers.prio_alpha,
+        prio_beta0=hypers.prio_beta0,
     )
 
     # Create logger
@@ -405,6 +391,7 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
 
 def parse_args() -> TrainConfig:
     """Parse command line arguments."""
+    default_config = TrainConfig()
     parser = argparse.ArgumentParser(description="Train PPO agent on Tetris")
     parser.add_argument(
         "--sweep",
@@ -414,39 +401,39 @@ def parse_args() -> TrainConfig:
     parser.add_argument(
         "--epochs",
         type=int,
-        default=1000,
-        help="Number of training epochs (default: 1000)",
+        default=default_config.num_epochs,
+        help=f"Number of training epochs (default: {default_config.num_epochs})",
     )
     parser.add_argument(
         "--sweep-trials",
         type=int,
-        default=50,
-        help="Number of sweep trials (default: 50)",
+        default=default_config.sweep_trials,
+        help=f"Number of sweep trials (default: {default_config.sweep_trials})",
     )
     parser.add_argument(
         "--num-envs",
         type=int,
-        default=1024,
-        help="Number of parallel environments (default: 1024)",
+        default=default_config.num_envs,
+        help=f"Number of parallel environments (default: {default_config.num_envs})",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=65536,
-        help="Batch size (default: 65536)",
+        default=default_config.batch_size,
+        help=f"Batch size (default: {default_config.batch_size})",
     )
     parser.add_argument(
         "--logger",
         type=str,
         choices=["noop", "wandb", "neptune"],
-        default="noop",
-        help="Logger to use (default: noop)",
+        default=default_config.logger,
+        help=f"Logger to use (default: {default_config.logger})",
     )
     parser.add_argument(
         "--seed",
         type=int,
-        default=0,
-        help="Random seed (default: 0)",
+        default=default_config.seed,
+        help=f"Random seed (default: {default_config.seed})",
     )
 
     args = parser.parse_args()
