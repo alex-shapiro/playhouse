@@ -14,13 +14,16 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Literal
 
 import torch
 
 from playhouse.environments.tetris.tetris import Tetris
+from playhouse.logger import Logger
+from playhouse.logger.neptune import NeptuneConfig, NeptuneLogger
+from playhouse.logger.noop import NoopLogger
 from playhouse.logger.wandb import WandbConfig, WandbLogger
 from playhouse.models.mini_policy import MiniPolicy
 from playhouse.ppo import RLConfig, Trainer
@@ -41,9 +44,9 @@ class TrainConfig:
 
     # Training
     num_epochs: int = 1000
-    num_envs: int = 64
+    num_envs: int = 1024
     batch_size: int = 65536
-    bptt_horizon: int = 16
+    bptt_horizon: int = 64
     checkpoint_interval: int = 100
 
     # Sweep
@@ -52,9 +55,11 @@ class TrainConfig:
     sweep_timesteps: int = 1_000_000
 
     # Logging
+    logger: Literal["noop", "wandb", "neptune"] = "noop"
     wandb_project: str = "tetris"
     wandb_group: str = "ppo"
-    use_wandb: bool = True
+    neptune_name: str = "tetris"
+    neptune_project: str = "ppo"
 
     # Device
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -65,42 +70,15 @@ class TrainConfig:
 class TetrisHyperparameters:
     """Hyperparameters for Tetris PPO training."""
 
-    learning_rate: float = 2.5e-4
-    gamma: float = 0.99
-    gae_lambda: float = 0.95
+    learning_rate: float = 0.012
+    gamma: float = 0.995
+    gae_lambda: float = 0.55
     clip_coef: float = 0.1
-    vf_coef: float = 0.5
-    ent_coef: float = 0.01
-    max_grad_norm: float = 0.5
+    vf_coef: float = 4.74
+    ent_coef: float = 0.02
+    max_grad_norm: float = 5.0
     update_epochs: int = 4
-    hidden_size: int = 128
-
-    def to_dict(self) -> dict[str, float | int]:
-        return {
-            "learning_rate": self.learning_rate,
-            "gamma": self.gamma,
-            "gae_lambda": self.gae_lambda,
-            "clip_coef": self.clip_coef,
-            "vf_coef": self.vf_coef,
-            "ent_coef": self.ent_coef,
-            "max_grad_norm": self.max_grad_norm,
-            "update_epochs": self.update_epochs,
-            "hidden_size": self.hidden_size,
-        }
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> TetrisHyperparameters:
-        return cls(
-            learning_rate=float(d.get("learning_rate", 2.5e-4)),
-            gamma=float(d.get("gamma", 0.99)),
-            gae_lambda=float(d.get("gae_lambda", 0.95)),
-            clip_coef=float(d.get("clip_coef", 0.1)),
-            vf_coef=float(d.get("vf_coef", 0.5)),
-            ent_coef=float(d.get("ent_coef", 0.01)),
-            max_grad_norm=float(d.get("max_grad_norm", 0.5)),
-            update_epochs=int(d.get("update_epochs", 4)),
-            hidden_size=int(d.get("hidden_size", 128)),
-        )
+    hidden_size: int = 256
 
 
 # -----------------------------------------------------------------------------
@@ -112,7 +90,7 @@ def create_sweep_config(device: str) -> SweepConfig:
     """Create sweep configuration for Tetris hyperparameters."""
     return SweepConfig(
         device=device,
-        metric="score",
+        metric="ep_return",
         goal="maximize",
         params={
             "learning_rate": ParamSpaceConfig(
@@ -216,20 +194,22 @@ def run_sweep_trial(
     # Create trainer (no logger for sweep trials)
     trainer = Trainer(config=rl_config, env=env, policy=policy, logger=None)
 
-    # Train and track best score
-    best_score = float("-inf")
+    # Train and track best ep_return
+    best_ep_return = float("-inf")
     while trainer.state.global_step < config.sweep_timesteps:
         trainer.evaluate()
         logs = trainer.train()
-        if logs is not None:
-            score = logs.get("environment/episode_return", 0.0)
-            if isinstance(score, (int, float)):
-                best_score = max(best_score, float(score))
+        if logs is not None and "environment/ep_return" in logs:
+            ep_return = logs["environment/ep_return"]
+            best_ep_return = max(best_ep_return, float(ep_return))
 
     cost = float(trainer.state.global_step)
     trainer.close()
 
-    return best_score, cost
+    if best_ep_return == float("-inf"):
+        raise RuntimeError("No ep_return logged during sweep trial")
+
+    return best_ep_return, cost
 
 
 def run_hyperparameter_sweep(config: TrainConfig) -> TetrisHyperparameters:
@@ -282,7 +262,7 @@ def run_hyperparameter_sweep(config: TrainConfig) -> TetrisHyperparameters:
     for k, v in best_hypers.items():
         print(f"  {k}: {v}")
 
-    return TetrisHyperparameters.from_dict(best_hypers)
+    return TetrisHyperparameters(**best_hypers)  # pyright: ignore[reportArgumentType]
 
 
 # -----------------------------------------------------------------------------
@@ -299,7 +279,7 @@ def load_hyperparameters() -> TetrisHyperparameters | None:
         with open(HYPERPARAMS_FILE) as f:
             data = json.load(f)
         print(f"Loaded hyperparameters from {HYPERPARAMS_FILE}")
-        return TetrisHyperparameters.from_dict(data)
+        return TetrisHyperparameters(**data)
     except (json.JSONDecodeError, KeyError) as e:
         print(f"Failed to load hyperparameters: {e}")
         return None
@@ -309,7 +289,7 @@ def save_hyperparameters(hypers: TetrisHyperparameters) -> None:
     """Save hyperparameters to disk."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with open(HYPERPARAMS_FILE, "w") as f:
-        json.dump(hypers.to_dict(), f, indent=2)
+        json.dump(asdict(hypers), f, indent=2)
     print(f"Saved hyperparameters to {HYPERPARAMS_FILE}")
 
 
@@ -361,20 +341,30 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
         max_grad_norm=hypers.max_grad_norm,
         update_epochs=hypers.update_epochs,
         checkpoint_interval=config.checkpoint_interval,
+        minibatch_size=config.batch_size,
+        max_minibatch_size=config.batch_size,
     )
 
     # Create logger
-    logger = None
-    if config.use_wandb:
-        try:
-            wandb_config = WandbConfig(
+    logger: Logger
+    match config.logger:
+        case "wandb":
+            wandb_cfg = WandbConfig(
                 wandb_project=config.wandb_project,
                 wandb_group=config.wandb_group,
             )
-            logger = WandbLogger(wandb_config)
+            logger = WandbLogger(wandb_cfg)
             print(f"  Logging to W&B run: {logger.run_id}")
-        except Exception as e:
-            print(f"  W&B logging disabled: {e}")
+        case "neptune":
+            neptune_cfg = NeptuneConfig(
+                neptune_name=config.neptune_name,
+                neptune_project=config.neptune_project,
+            )
+            logger = NeptuneLogger(neptune_cfg)
+            print(f"  Logging to Neptune run: {logger.run_id}")
+        case "noop":
+            logger = NoopLogger()
+            print(f"  Logging disabled (run_id: {logger.run_id})")
 
     # Create trainer
     trainer = Trainer(config=rl_config, env=env, policy=policy, logger=logger)
@@ -389,17 +379,18 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
 
         if logs is not None:
             epoch += 1
-            sps = logs.get("SPS", 0)
-            step = logs.get("agent_steps", 0)
-            score = logs.get("environment/episode_return", 0)
+            sps = logs["SPS"]
+            step = logs["agent_steps"]
 
             if epoch % 10 == 0:
-                print(
-                    f"Epoch {epoch:4d} | "
-                    f"Step {step:10,d} | "
-                    f"SPS {sps:6.0f} | "
-                    f"Score {score:.1f}"
-                )
+                msg = f"Epoch {epoch:4d} | Step {step:10,d} | SPS {sps:6.0f}"
+                if "environment/ep_return" in logs:
+                    ep_return = logs["environment/ep_return"]
+                    score = logs["environment/score"]
+                    msg += f" | Return {ep_return:.2f} | Score {score:.1f}"
+                else:
+                    msg += " | Return N/A | Score N/A"
+                print(msg)
 
     # Close and return final model path
     model_path = trainer.close()
@@ -435,8 +426,8 @@ def parse_args() -> TrainConfig:
     parser.add_argument(
         "--num-envs",
         type=int,
-        default=64,
-        help="Number of parallel environments (default: 64)",
+        default=1024,
+        help="Number of parallel environments (default: 1024)",
     )
     parser.add_argument(
         "--batch-size",
@@ -445,9 +436,11 @@ def parse_args() -> TrainConfig:
         help="Batch size (default: 65536)",
     )
     parser.add_argument(
-        "--no-wandb",
-        action="store_true",
-        help="Disable W&B logging",
+        "--logger",
+        type=str,
+        choices=["noop", "wandb", "neptune"],
+        default="noop",
+        help="Logger to use (default: noop)",
     )
     parser.add_argument(
         "--seed",
@@ -464,7 +457,7 @@ def parse_args() -> TrainConfig:
         sweep_trials=args.sweep_trials,
         num_envs=args.num_envs,
         batch_size=args.batch_size,
-        use_wandb=not args.no_wandb,
+        logger=args.logger,
         seed=args.seed,
     )
 
@@ -487,7 +480,7 @@ def main() -> None:
         save_hyperparameters(hypers)
     else:
         print("Using existing hyperparameters:")
-        for k, v in hypers.to_dict().items():
+        for k, v in asdict(hypers).items():
             print(f"  {k}: {v}")
 
     # Train

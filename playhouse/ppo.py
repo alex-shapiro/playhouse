@@ -224,9 +224,15 @@ class Utilization(Thread):
                     time.sleep(self.delay)
                     continue
 
-                self.gpu_util.append(float(torch.cuda.utilization()))
-                free, total = torch.cuda.mem_get_info()
-                self.gpu_mem.append(100 * (total - free) / total)
+                try:
+                    self.gpu_util.append(float(torch.cuda.utilization()))
+                except ModuleNotFoundError:
+                    self.gpu_util.append(0.0)
+                try:
+                    free, total = torch.cuda.mem_get_info()
+                    self.gpu_mem.append(100 * (total - free) / total)
+                except Exception:
+                    self.gpu_mem.append(0.0)
             else:
                 self.gpu_util.append(0.0)
                 self.gpu_mem.append(0.0)
@@ -243,16 +249,32 @@ class Utilization(Thread):
 
 
 # Try to import native C++/CUDA extension, fall back to pure PyTorch
-def _check_native_gae() -> bool:
+def _check_native_gae() -> tuple[bool, bool]:
+    """Check if native GAE kernels are available.
+
+    Returns:
+        Tuple of (cpu_available, cuda_available)
+    """
     try:
         import playhouse._C  # pyright: ignore[reportMissingImports]  # noqa: F401
-
-        return True
     except ImportError:
-        return False
+        return False, False
+
+    # Check if CUDA kernel was compiled by looking at available backends
+    from torch.utils.cpp_extension import CUDA_HOME, ROCM_HOME
+
+    cuda_available = bool(CUDA_HOME or ROCM_HOME)
+    return True, cuda_available
 
 
-_use_native_gae: bool = _check_native_gae()
+_native_gae_cpu: bool
+_native_gae_cuda: bool
+_native_gae_cpu, _native_gae_cuda = _check_native_gae()
+
+if _native_gae_cuda:
+    print("using CUDA GAE")
+else:
+    print("using CPU GAE")
 
 
 def compute_gae_advantage(
@@ -285,7 +307,12 @@ def compute_gae_advantage(
     """
     advantages = torch.zeros_like(values)
 
-    if _use_native_gae:
+    # Use native kernel if available for this device
+    use_native = (values.is_cuda and _native_gae_cuda) or (
+        not values.is_cuda and _native_gae_cpu
+    )
+
+    if use_native:
         torch.ops.playhouse.compute_gae_advantage(
             values,
             rewards,

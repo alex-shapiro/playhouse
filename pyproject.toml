@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools", "torch"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "playhouse"
 version = "0.1.0"
@@ -10,6 +14,7 @@ dependencies = [
     "heavyball>=2.2.2",
     "neptune>=1.14.0",
     "numpy>=2.3.5",
+    "nvidia-ml-py>=13.580.82",
     "raylib>=5.5.0.3",
     "scikit-learn>=1.7.2",
     "scipy>=1.16.3",
@@ -30,3 +35,6 @@ dev = [
     "pyo3-stubgen>=0.3.0",
     "ruff>=0.14.5",
 ]
+
+[tool.setuptools.packages.find]
+include = ["playhouse*"]
