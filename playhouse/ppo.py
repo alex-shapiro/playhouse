@@ -111,6 +111,7 @@ class RLConfig:
     cpu_offload: bool = False
 
     # Checkpointing
+    save_checkpoints: bool = True
     checkpoint_interval: int = 100
 
 
@@ -887,7 +888,9 @@ class Trainer:
             self.state.last_log_step = self.state.global_step
             profile.clear()
 
-        if self.state.epoch % config.checkpoint_interval == 0 or done_training:
+        if config.save_checkpoints and (
+            self.state.epoch % config.checkpoint_interval == 0 or done_training
+        ):
             self.save_checkpoint()
 
         return logs

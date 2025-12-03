@@ -166,7 +166,7 @@ def run_sweep_trial(
         ent_coef=float(hypers.get("ent_coef", 0.01)),
         max_grad_norm=float(hypers.get("max_grad_norm", 0.5)),
         update_epochs=int(hypers.get("update_epochs", 4)),
-        checkpoint_interval=1000000,  # Don't checkpoint during sweep
+        save_checkpoints=False,
     )
 
     # Create trainer (no logger for sweep trials)
