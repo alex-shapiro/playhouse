@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import Literal
 
 import torch
 
+from playhouse import io
 from playhouse.environments.tetris.tetris import Tetris
 from playhouse.logger import Logger
 from playhouse.logger.neptune import NeptuneConfig, NeptuneLogger
@@ -33,7 +33,7 @@ from playhouse.sweep.protein import Protein, ProteinConfig, ProteinState
 # Configuration
 # -----------------------------------------------------------------------------
 
-DATA_DIR = Path("data/tetris")
+DATA_DIR = io.data_directory("tetris")
 HYPERPARAMS_FILE = DATA_DIR / "hyperparameters.json"
 
 
@@ -42,9 +42,9 @@ class TrainConfig:
     """Training configuration."""
 
     # Training
-    num_epochs: int = 50000
+    num_epochs: int = 45_000
     num_envs: int = 1024
-    batch_size: int = 65536
+    batch_size: int = 65_536
     bptt_horizon: int = 64
     checkpoint_interval: int = 50
 
@@ -271,91 +271,6 @@ def save_hyperparameters(hypers: TetrisHyperparameters) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Checkpoint Loading
-# -----------------------------------------------------------------------------
-
-
-@dataclass
-class CheckpointInfo:
-    """Information about a saved checkpoint."""
-
-    model_path: Path
-    state_path: Path
-    epoch: int
-    global_step: int
-    run_id: str
-
-
-def find_latest_checkpoint() -> CheckpointInfo | None:
-    """Find the latest checkpoint in the data directory.
-
-    Returns:
-        CheckpointInfo if a valid checkpoint exists, None otherwise.
-    """
-    # Look for checkpoint directories (format: tetris_{run_id})
-    checkpoint_dirs = list(DATA_DIR.glob("tetris_*"))
-    if not checkpoint_dirs:
-        return None
-
-    # Find directories with trainer_state.pt
-    valid_checkpoints: list[CheckpointInfo] = []
-    for checkpoint_dir in checkpoint_dirs:
-        if not checkpoint_dir.is_dir():
-            continue
-
-        state_path = checkpoint_dir / "trainer_state.pt"
-        if not state_path.exists():
-            continue
-
-        try:
-            state = torch.load(state_path, weights_only=True)
-            model_name = state["model_name"]
-            model_path = checkpoint_dir / model_name
-
-            if not model_path.exists():
-                continue
-
-            valid_checkpoints.append(
-                CheckpointInfo(
-                    model_path=model_path,
-                    state_path=state_path,
-                    epoch=state["epoch"],
-                    global_step=state["global_step"],
-                    run_id=state["run_id"],
-                )
-            )
-        except (KeyError, RuntimeError) as e:
-            print(f"Warning: Could not load checkpoint from {checkpoint_dir}: {e}")
-            continue
-
-    if not valid_checkpoints:
-        return None
-
-    # Return the checkpoint with the highest epoch
-    return max(valid_checkpoints, key=lambda c: c.epoch)
-
-
-def load_checkpoint(
-    checkpoint: CheckpointInfo,
-    policy: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
-) -> None:
-    """Load model and optimizer state from a checkpoint.
-
-    Args:
-        checkpoint: Checkpoint information
-        policy: Policy network to load weights into
-        optimizer: Optimizer to load state into
-    """
-    # Load model weights
-    policy.load_state_dict(torch.load(checkpoint.model_path, weights_only=True))
-
-    # Load optimizer state
-    state = torch.load(checkpoint.state_path, weights_only=True)
-    optimizer.load_state_dict(state["optimizer_state_dict"])
-
-
-# -----------------------------------------------------------------------------
 # Training
 # -----------------------------------------------------------------------------
 
@@ -440,11 +355,11 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
     trainer = Trainer(config=rl_config, env=env, policy=policy, logger=logger)
 
     # Try to load from checkpoint
-    # checkpoint = find_latest_checkpoint()
-    checkpoint = None
+    checkpoint = io.latest_checkpoint("tetris")
+    # checkpoint = None
     if checkpoint is not None:
         print(f"\nFound checkpoint at epoch {checkpoint.epoch}")
-        load_checkpoint(checkpoint, trainer.uncompiled_policy, trainer.optimizer)
+        io.load_checkpoint(checkpoint, trainer.uncompiled_policy, trainer.optimizer)
         trainer.state.epoch = checkpoint.epoch
         trainer.state.global_step = checkpoint.global_step
         print(
