@@ -1,4 +1,4 @@
-"""Interactive Tetris player with rendering."""
+"""Evaluate latest Tetris model"""
 
 import numpy as np
 import torch
@@ -21,49 +21,46 @@ def load_latest_model(env: Tetris, device: str) -> MiniPolicy:
 
 
 def main():
-    """Evaluate a single Tetris environment with trained or random policy."""
-    print("Controls:")
-    print("  ESC - Exit")
-    print("  TAB - Toggle fullscreen")
-    print()
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    env = Tetris(num_envs=1)
-    obs, _ = env.reset(seed=np.random.randint(0, 1000000))
     num_episodes = 100
 
-    # Try to load trained model
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    env = Tetris(num_envs=num_episodes)
+    obs, _ = env.reset(seed=np.random.randint(0, 1000000))
+
     policy = load_latest_model(env, device)
-    step_count = 0
-    episode_count = 0
-    total_reward = 0.0
 
-    truncations = np.zeros(1)
+    episode_rewards: list[float] = []
+    episode_steps: list[int] = []
+    current_rewards = np.zeros(num_episodes)
+    current_steps = np.zeros(num_episodes, dtype=np.int32)
 
-    while episode_count < num_episodes:
+    while len(episode_rewards) < num_episodes:
         obs_tensor = torch.as_tensor(obs, device=device)
         with torch.no_grad():
             logits, _ = policy.forward_eval(obs_tensor, {})
-            action = logits.argmax(dim=-1).cpu().numpy()
-            obs, rewards, terminals, truncations, info = env.step(action)
+            actions = logits.argmax(dim=-1).cpu().numpy()
 
-            # Track stats
-            step_count += 1
-            total_reward += rewards[0]
+        obs, rewards, terminals, truncations, info = env.step(actions)
 
-            # Check if episode ended
-            if terminals[0] or truncations[0]:
-                episode_count += 1
-                print(f"Ep {episode_count} ended after {step_count} steps")
-                print(f"Ep reward: {total_reward:.2f}")
+        current_rewards += rewards
+        current_steps += 1
 
-                # Reset for next episode
-                obs, _ = env.reset(seed=np.random.randint(0, 1000000))
-                step_count = 0
-                total_reward = 0.0
+        # Check for completed episodes
+        dones = terminals | truncations
+        for i in np.where(dones)[0]:
+            if len(episode_rewards) < num_episodes:
+                episode_rewards.append(current_rewards[i])
+                episode_steps.append(current_steps[i])
+                print(
+                    f"Ep {len(episode_rewards)} ended after {current_steps[i]} steps, "
+                    f"reward: {current_rewards[i]:.2f}"
+                )
+            current_rewards[i] = 0.0
+            current_steps[i] = 0
 
-    print(f"Eval Episodes: {episode_count}")
-    print(f"Avg Reward: {total_reward / episode_count}")
+    print(f"\nEval Episodes: {len(episode_rewards)}")
+    print(f"Avg Reward: {np.mean(episode_rewards):.2f}")
+    print(f"Avg Steps: {np.mean(episode_steps):.1f}")
 
 
 if __name__ == "__main__":
