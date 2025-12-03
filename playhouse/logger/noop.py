@@ -1,7 +1,7 @@
 import time
 from typing import Any
 
-from playhouse.logger import Logger
+from .protocol import Logger
 
 
 class NoopLogger(Logger):

@@ -1,17 +1,7 @@
-from typing import Any, Protocol
-
-from playhouse.logger.neptune import NeptuneConfig, NeptuneLogger
-from playhouse.logger.noop import NoopLogger
-from playhouse.logger.wandb import WandbConfig, WandbLogger
-
-
-class Logger(Protocol):
-    """Protocol for loggers"""
-
-    run_id: str
-
-    def log(self, logs: dict[str, Any], step: int) -> None: ...
-    def close(self, model_path: str) -> None: ...
+from .neptune import NeptuneConfig, NeptuneLogger
+from .noop import NoopLogger
+from .protocol import Logger
+from .wandb import WandbConfig, WandbLogger
 
 
 def init_logger(config: WandbConfig | NeptuneConfig | None) -> Logger:

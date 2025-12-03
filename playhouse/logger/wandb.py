@@ -2,7 +2,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Literal, final
 
-from playhouse.logger import Logger
+from .protocol import Logger
 
 
 @dataclass(frozen=True, slots=True)
