@@ -613,6 +613,10 @@ class Trainer:
         # Model info
         self.model_size = sum(p.numel() for p in policy.parameters() if p.requires_grad)
 
+        # Initial environment reset (only done once, not per-epoch)
+        obs, _ = env.reset(seed=config.seed)
+        self.obs = obs
+
     @property
     def uptime(self) -> float:
         return time.time() - self.state.start_time
@@ -645,14 +649,13 @@ class Trainer:
         profile("eval", epoch)
         profile("eval_misc", epoch, nest=True)
 
-        # Reset LSTM state at start of episode
+        # Reset LSTM state at start of epoch
         if config.use_rnn and self.lstm_h is not None and self.lstm_c is not None:
             self.lstm_h.zero_()
             self.lstm_c.zero_()
 
-        # Reset environment
-        profile("env", epoch)
-        obs, info = self.env.reset(seed=config.seed + epoch)
+        # Use current obs (envs auto-reset on game over, no global reset per epoch)
+        obs = self.obs
 
         # Calculate how many "rows" of segments we need to fill
         # Each row contains num_envs segments, filled over horizon steps
@@ -716,6 +719,9 @@ class Trainer:
                             self.stats[k].append(float(v))
                         elif isinstance(v, np.ndarray):
                             self.stats[k].extend(v.tolist())
+
+        # Persist obs for next epoch (envs continue from where they left off)
+        self.obs = obs
 
         profile.end()
         return self.stats
