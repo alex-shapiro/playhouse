@@ -43,7 +43,7 @@ class TrainConfig:
     """Training configuration."""
 
     # Training
-    num_epochs: int = 20000
+    num_epochs: int = 5000
     num_envs: int = 1024
     batch_size: int = 65536
     bptt_horizon: int = 64
