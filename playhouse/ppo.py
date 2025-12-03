@@ -966,13 +966,15 @@ class Trainer:
         """Clean up resources and save final checkpoint."""
         self.env.close()
         self.utilization.stop()
-        model_path = self.save_checkpoint()
 
-        config = self.config
-        run_id = self.logger.run_id
-        final_path = os.path.join(config.data_dir, f"{config.env_name}_{run_id}.pt")
-        if model_path:
-            shutil.copy(model_path, final_path)
+        final_path = ""
+        if self.config.save_checkpoints:
+            model_path = self.save_checkpoint()
+            config = self.config
+            run_id = self.logger.run_id
+            final_path = os.path.join(config.data_dir, f"{config.env_name}_{run_id}.pt")
+            if model_path:
+                shutil.copy(model_path, final_path)
 
         self.logger.close(final_path)
         return final_path
