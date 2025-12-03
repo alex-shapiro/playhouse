@@ -1,12 +1,12 @@
 """
-Tetris PPO training script with hyperparameter sweeping.
+Tetris PPO training script.
 
 Usage:
-    python -m playhouse.environments.tetris.train [--sweep] [--epochs N]
+    python -m playhouse.environments.tetris.train
 
 This script:
-1. Loads existing hyperparameters if available
-2. If not (or --sweep is passed), runs Protein sweeper to find optimal hyperparameters
+1. Loads existing hyperparameters if available, otherwise runs Protein sweeper
+2. Resumes from the latest checkpoint if available
 3. Trains a PPO agent for the specified number of epochs, saving checkpoints
 """
 
@@ -46,7 +46,7 @@ class TrainConfig:
     num_envs: int = 1024
     batch_size: int = 65536
     bptt_horizon: int = 64
-    checkpoint_interval: int = 100
+    checkpoint_interval: int = 50
 
     # Sweep
     run_sweep: bool = False
@@ -271,6 +271,91 @@ def save_hyperparameters(hypers: TetrisHyperparameters) -> None:
 
 
 # -----------------------------------------------------------------------------
+# Checkpoint Loading
+# -----------------------------------------------------------------------------
+
+
+@dataclass
+class CheckpointInfo:
+    """Information about a saved checkpoint."""
+
+    model_path: Path
+    state_path: Path
+    epoch: int
+    global_step: int
+    run_id: str
+
+
+def find_latest_checkpoint() -> CheckpointInfo | None:
+    """Find the latest checkpoint in the data directory.
+
+    Returns:
+        CheckpointInfo if a valid checkpoint exists, None otherwise.
+    """
+    # Look for checkpoint directories (format: tetris_{run_id})
+    checkpoint_dirs = list(DATA_DIR.glob("tetris_*"))
+    if not checkpoint_dirs:
+        return None
+
+    # Find directories with trainer_state.pt
+    valid_checkpoints: list[CheckpointInfo] = []
+    for checkpoint_dir in checkpoint_dirs:
+        if not checkpoint_dir.is_dir():
+            continue
+
+        state_path = checkpoint_dir / "trainer_state.pt"
+        if not state_path.exists():
+            continue
+
+        try:
+            state = torch.load(state_path, weights_only=True)
+            model_name = state["model_name"]
+            model_path = checkpoint_dir / model_name
+
+            if not model_path.exists():
+                continue
+
+            valid_checkpoints.append(
+                CheckpointInfo(
+                    model_path=model_path,
+                    state_path=state_path,
+                    epoch=state["epoch"],
+                    global_step=state["global_step"],
+                    run_id=state["run_id"],
+                )
+            )
+        except (KeyError, RuntimeError) as e:
+            print(f"Warning: Could not load checkpoint from {checkpoint_dir}: {e}")
+            continue
+
+    if not valid_checkpoints:
+        return None
+
+    # Return the checkpoint with the highest epoch
+    return max(valid_checkpoints, key=lambda c: c.epoch)
+
+
+def load_checkpoint(
+    checkpoint: CheckpointInfo,
+    policy: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+) -> None:
+    """Load model and optimizer state from a checkpoint.
+
+    Args:
+        checkpoint: Checkpoint information
+        policy: Policy network to load weights into
+        optimizer: Optimizer to load state into
+    """
+    # Load model weights
+    policy.load_state_dict(torch.load(checkpoint.model_path, weights_only=True))
+
+    # Load optimizer state
+    state = torch.load(checkpoint.state_path, weights_only=True)
+    optimizer.load_state_dict(state["optimizer_state_dict"])
+
+
+# -----------------------------------------------------------------------------
 # Training
 # -----------------------------------------------------------------------------
 
@@ -354,16 +439,40 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
     # Create trainer
     trainer = Trainer(config=rl_config, env=env, policy=policy, logger=logger)
 
-    print(f"\nTraining for {total_timesteps:,} timesteps...")
+    # Try to load from checkpoint
+    checkpoint = find_latest_checkpoint()
+    if checkpoint is not None:
+        print(f"\nFound checkpoint at epoch {checkpoint.epoch}")
+        load_checkpoint(checkpoint, trainer.uncompiled_policy, trainer.optimizer)
+        trainer.state.epoch = checkpoint.epoch
+        trainer.state.global_step = checkpoint.global_step
+        print(
+            f"  Resumed from epoch {checkpoint.epoch}, step {checkpoint.global_step:,}"
+        )
+
+        # Check if we've already reached the target
+        if checkpoint.epoch >= config.num_epochs:
+            print(
+                f"\nAlready trained for {checkpoint.epoch} epochs (target: {config.num_epochs})"
+            )
+            print("Increase num_epochs in TrainConfig to continue training.")
+            trainer.close()
+            return str(checkpoint.model_path)
+    else:
+        print("\nNo checkpoint found, starting from scratch")
+
+    remaining_epochs = config.num_epochs - trainer.state.epoch
+    print(
+        f"Training for {remaining_epochs} more epochs ({total_timesteps:,} total timesteps)..."
+    )
 
     # Training loop
-    epoch = 0
     while trainer.state.global_step < total_timesteps:
         trainer.evaluate()
         logs = trainer.train()
 
         if logs is not None:
-            epoch += 1
+            epoch = trainer.state.epoch
             sps = logs["SPS"]
             step = logs["agent_steps"]
 
