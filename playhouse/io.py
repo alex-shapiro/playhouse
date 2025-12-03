@@ -33,6 +33,17 @@ def load_checkpoint(
     optimizer.load_state_dict(state["optimizer_state_dict"])
 
 
+def load_weights_for_inference(
+    env_name: str,
+    device: str,
+) -> dict[str, torch.Tensor] | None:
+    """Load model weights from latest checkpoint for inference"""
+    checkpoint = latest_checkpoint(env_name)
+    if checkpoint is None:
+        return None
+    return torch.load(checkpoint.model_path, map_location=device, weights_only=True)
+
+
 def latest_checkpoint(env_name: str) -> CheckpointInfo | None:
     """Find the latest checkpoint in the data directory"""
     # Look for checkpoint directories (format: tetris_{run_id})

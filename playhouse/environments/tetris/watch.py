@@ -1,30 +1,20 @@
 """Interactive Tetris player with rendering."""
 
-import glob
 import time
-from pathlib import Path
 
 import numpy as np
 import torch
 
+from playhouse import io
 from playhouse.environments.tetris.tetris import Tetris
 from playhouse.models.mini_policy import MiniPolicy
-
-DATA_DIR = Path("data/tetris")
 
 
 def load_latest_model(env: Tetris, device: str) -> MiniPolicy | None:
     """Load the most recently trained model if it exists."""
-    pattern = str(DATA_DIR / "tetris_*.pt")
-    model_files = glob.glob(pattern)
-    if not model_files:
+    state_dict = io.load_weights_for_inference("tetris", device)
+    if state_dict is None:
         return None
-
-    # Get most recent by modification time
-    latest = max(model_files, key=lambda f: Path(f).stat().st_mtime)
-    print(f"Loading model: {latest}")
-
-    state_dict = torch.load(latest, map_location=device, weights_only=True)
 
     # Infer hidden size from encoder weight shape
     hidden_size = state_dict["encoder.encoder.0.weight"].shape[0]
