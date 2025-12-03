@@ -2,8 +2,10 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Literal, final
 
+from playhouse.logger import Logger
 
-@dataclass
+
+@dataclass(frozen=True, slots=True)
 class WandbConfig:
     wandb_project: str
     wandb_group: str
@@ -12,15 +14,16 @@ class WandbConfig:
 
 
 @final
-class WandbLogger:
+class WandbLogger(Logger):
     def __init__(
         self,
         config: WandbConfig,
         load_id: str | None = None,
         resume: bool | Literal["allow", "never", "must", "auto"] | None = "allow",
     ) -> None:
-        import wandb
         from wandb.util import generate_id
+
+        import wandb
 
         self.run = wandb.init(
             id=load_id or generate_id(),

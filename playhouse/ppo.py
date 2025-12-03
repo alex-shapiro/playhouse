@@ -352,7 +352,13 @@ def _compute_gae_advantage_pytorch(
     vtrace_rho_clip: float,
     vtrace_c_clip: float,
 ) -> Tensor:
-    """Pure PyTorch implementation of GAE with V-trace."""
+    """Pure PyTorch implementation of GAE with V-trace.
+
+    Matches PufferLib's implementation which:
+    - Computes advantages for timesteps 0 to horizon-2
+    - Uses rewards[t+1] and values[t+1] (offset by one)
+    - Leaves the last timestep's advantage at 0 (batch boundary)
+    """
     device = values.device
     segments, horizon = values.shape
 
@@ -362,19 +368,19 @@ def _compute_gae_advantage_pytorch(
 
     last_gae = torch.zeros(segments, device=device)
 
-    # Compute advantages backwards through time
-    for t in reversed(range(horizon)):
-        if t == horizon - 1:
-            next_value = torch.zeros(segments, device=device)
-        else:
-            next_value = values[:, t + 1]
-
-        not_terminal = 1.0 - terminals[:, t]
+    # Compute advantages backwards through time (skip last timestep like PufferLib)
+    # Last timestep (horizon-1) stays at 0 - treated as batch boundary
+    for t in reversed(range(horizon - 1)):
+        t_next = t + 1
+        not_terminal = 1.0 - terminals[:, t_next]
         delta = rho[:, t] * (
-            rewards[:, t] + gamma * next_value * not_terminal - values[:, t]
+            rewards[:, t_next] + gamma * values[:, t_next] * not_terminal - values[:, t]
         )
         last_gae = delta + gamma * gae_lambda * not_terminal * c[:, t] * last_gae
         advantages[:, t] = last_gae
+
+    # Last timestep advantage is 0 (batch boundary)
+    advantages[:, horizon - 1] = 0
 
     return advantages
 
@@ -613,6 +619,10 @@ class Trainer:
         # Model info
         self.model_size = sum(p.numel() for p in policy.parameters() if p.requires_grad)
 
+        # Initial environment reset (only done once, not per-epoch)
+        obs, _ = env.reset(seed=config.seed)
+        self.obs = obs
+
     @property
     def uptime(self) -> float:
         return time.time() - self.state.start_time
@@ -645,14 +655,13 @@ class Trainer:
         profile("eval", epoch)
         profile("eval_misc", epoch, nest=True)
 
-        # Reset LSTM state at start of episode
+        # Reset LSTM state at start of epoch
         if config.use_rnn and self.lstm_h is not None and self.lstm_c is not None:
             self.lstm_h.zero_()
             self.lstm_c.zero_()
 
-        # Reset environment
-        profile("env", epoch)
-        obs, info = self.env.reset(seed=config.seed + epoch)
+        # Use current obs (envs auto-reset on game over, no global reset per epoch)
+        obs = self.obs
 
         # Calculate how many "rows" of segments we need to fill
         # Each row contains num_envs segments, filled over horizon steps
@@ -717,6 +726,9 @@ class Trainer:
                         elif isinstance(v, np.ndarray):
                             self.stats[k].extend(v.tolist())
 
+        # Persist obs for next epoch (envs continue from where they left off)
+        self.obs = obs
+
         profile.end()
         return self.stats
 
@@ -741,22 +753,10 @@ class Trainer:
 
         self.ratio[:] = 1
 
-        # Initialize advantages (will be computed in first iteration)
-        advantages = compute_gae_advantage(
-            self.values,
-            self.rewards,
-            self.terminals,
-            self.ratio,
-            config.gamma,
-            config.gae_lambda,
-            config.vtrace_rho_clip,
-            config.vtrace_c_clip,
-        )
-
         for mb in range(self.total_minibatches):
             profile("train_misc", epoch)
 
-            # Recompute advantages with updated ratios
+            # Compute advantages with current ratios (recomputed each iteration)
             advantages = compute_gae_advantage(
                 self.values,
                 self.rewards,

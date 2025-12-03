@@ -1,8 +1,10 @@
 import time
 from typing import Any
 
+from playhouse.logger import Logger
 
-class NoopLogger:
+
+class NoopLogger(Logger):
     run_id: str
 
     def __init__(self) -> None:

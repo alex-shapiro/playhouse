@@ -1,30 +1,27 @@
 """
-Tetris PPO training script with hyperparameter sweeping.
+Tetris PPO training script.
 
 Usage:
-    python -m playhouse.environments.tetris.train [--sweep] [--epochs N]
+    python -m playhouse.environments.tetris.train
 
 This script:
-1. Loads existing hyperparameters if available
-2. If not (or --sweep is passed), runs Protein sweeper to find optimal hyperparameters
+1. Loads existing hyperparameters if available, otherwise runs Protein sweeper
+2. Resumes from the latest checkpoint if available
 3. Trains a PPO agent for the specified number of epochs, saving checkpoints
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 from dataclasses import asdict, dataclass
-from pathlib import Path
-from typing import Literal
 
 import torch
 
+from playhouse import io
 from playhouse.environments.tetris.tetris import Tetris
-from playhouse.logger import Logger
-from playhouse.logger.neptune import NeptuneConfig, NeptuneLogger
-from playhouse.logger.noop import NoopLogger
-from playhouse.logger.wandb import WandbConfig, WandbLogger
+from playhouse.logger import init_logger
+from playhouse.logger.neptune import NeptuneConfig
+from playhouse.logger.wandb import WandbConfig
 from playhouse.models.mini_policy import MiniPolicy
 from playhouse.ppo import RLConfig, Trainer
 from playhouse.sweep.config import ParamSpaceConfig, SweepConfig
@@ -34,7 +31,7 @@ from playhouse.sweep.protein import Protein, ProteinConfig, ProteinState
 # Configuration
 # -----------------------------------------------------------------------------
 
-DATA_DIR = Path("data/tetris")
+DATA_DIR = io.data_directory("tetris")
 HYPERPARAMS_FILE = DATA_DIR / "hyperparameters.json"
 
 
@@ -43,11 +40,11 @@ class TrainConfig:
     """Training configuration."""
 
     # Training
-    num_epochs: int = 5000
+    num_epochs: int = 45_000
     num_envs: int = 1024
-    batch_size: int = 65536
+    batch_size: int = 65_536
     bptt_horizon: int = 64
-    checkpoint_interval: int = 100
+    checkpoint_interval: int = 50
 
     # Sweep
     run_sweep: bool = False
@@ -55,11 +52,7 @@ class TrainConfig:
     sweep_timesteps: int = 1_000_000
 
     # Logging
-    logger: Literal["noop", "wandb", "neptune"] = "noop"
-    wandb_project: str = "tetris"
-    wandb_group: str = "ppo"
-    neptune_name: str = "tetris"
-    neptune_project: str = "ppo"
+    logger: WandbConfig | NeptuneConfig | None = None
 
     # Device
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -332,39 +325,46 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
     )
 
     # Create logger
-    logger: Logger
-    match config.logger:
-        case "wandb":
-            wandb_cfg = WandbConfig(
-                wandb_project=config.wandb_project,
-                wandb_group=config.wandb_group,
-            )
-            logger = WandbLogger(wandb_cfg)
-            print(f"  Logging to W&B run: {logger.run_id}")
-        case "neptune":
-            neptune_cfg = NeptuneConfig(
-                neptune_name=config.neptune_name,
-                neptune_project=config.neptune_project,
-            )
-            logger = NeptuneLogger(neptune_cfg)
-            print(f"  Logging to Neptune run: {logger.run_id}")
-        case "noop":
-            logger = NoopLogger()
-            print(f"  Logging disabled (run_id: {logger.run_id})")
+    logger = init_logger(config.logger)
 
     # Create trainer
     trainer = Trainer(config=rl_config, env=env, policy=policy, logger=logger)
 
-    print(f"\nTraining for {total_timesteps:,} timesteps...")
+    # Try to load from checkpoint
+    checkpoint = io.latest_checkpoint("tetris")
+    # checkpoint = None
+    if checkpoint is not None:
+        print(f"\nFound checkpoint at epoch {checkpoint.epoch}")
+        io.load_checkpoint(checkpoint, trainer.uncompiled_policy, trainer.optimizer)
+        trainer.state.epoch = checkpoint.epoch
+        trainer.state.global_step = checkpoint.global_step
+        print(
+            f"  Resumed from epoch {checkpoint.epoch}, step {checkpoint.global_step:,}"
+        )
+
+        # Check if we've already reached the target
+        if checkpoint.epoch >= config.num_epochs:
+            print(
+                f"\nAlready trained for {checkpoint.epoch} epochs (target: {config.num_epochs})"
+            )
+            print("Increase num_epochs in TrainConfig to continue training.")
+            trainer.close()
+            return str(checkpoint.model_path)
+    else:
+        print("\nNo checkpoint found, starting from scratch")
+
+    remaining_epochs = config.num_epochs - trainer.state.epoch
+    print(
+        f"Training for {remaining_epochs} more epochs ({total_timesteps:,} total timesteps)..."
+    )
 
     # Training loop
-    epoch = 0
     while trainer.state.global_step < total_timesteps:
         trainer.evaluate()
         logs = trainer.train()
 
         if logs is not None:
-            epoch += 1
+            epoch = trainer.state.epoch
             sps = logs["SPS"]
             step = logs["agent_steps"]
 
@@ -389,78 +389,15 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
 # -----------------------------------------------------------------------------
 
 
-def parse_args() -> TrainConfig:
-    """Parse command line arguments."""
-    default_config = TrainConfig()
-    parser = argparse.ArgumentParser(description="Train PPO agent on Tetris")
-    parser.add_argument(
-        "--sweep",
-        action="store_true",
-        help="Run hyperparameter sweep even if saved hyperparameters exist",
-    )
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        default=default_config.num_epochs,
-        help=f"Number of training epochs (default: {default_config.num_epochs})",
-    )
-    parser.add_argument(
-        "--sweep-trials",
-        type=int,
-        default=default_config.sweep_trials,
-        help=f"Number of sweep trials (default: {default_config.sweep_trials})",
-    )
-    parser.add_argument(
-        "--num-envs",
-        type=int,
-        default=default_config.num_envs,
-        help=f"Number of parallel environments (default: {default_config.num_envs})",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=default_config.batch_size,
-        help=f"Batch size (default: {default_config.batch_size})",
-    )
-    parser.add_argument(
-        "--logger",
-        type=str,
-        choices=["noop", "wandb", "neptune"],
-        default=default_config.logger,
-        help=f"Logger to use (default: {default_config.logger})",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=default_config.seed,
-        help=f"Random seed (default: {default_config.seed})",
-    )
-
-    args = parser.parse_args()
-
-    return TrainConfig(
-        num_epochs=args.epochs,
-        run_sweep=args.sweep,
-        sweep_trials=args.sweep_trials,
-        num_envs=args.num_envs,
-        batch_size=args.batch_size,
-        logger=args.logger,
-        seed=args.seed,
-    )
-
-
 def main() -> None:
     """Main entry point."""
-    config = parse_args()
+    config = TrainConfig()
 
     # Ensure data directory exists
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     # Load or find hyperparameters
-    hypers = None
-    if not config.run_sweep:
-        hypers = load_hyperparameters()
-
+    hypers = load_hyperparameters()
     if hypers is None:
         print("No existing hyperparameters found. Running sweep...")
         hypers = run_hyperparameter_sweep(config)
