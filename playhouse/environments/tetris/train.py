@@ -43,7 +43,7 @@ class TrainConfig:
     """Training configuration."""
 
     # Training
-    num_epochs: int = 1000
+    num_epochs: int = 20000
     num_envs: int = 1024
     batch_size: int = 65536
     bptt_horizon: int = 64
@@ -51,7 +51,7 @@ class TrainConfig:
 
     # Sweep
     run_sweep: bool = False
-    sweep_trials: int = 50
+    sweep_trials: int = 200
     sweep_timesteps: int = 1_000_000
 
     # Logging
@@ -391,6 +391,7 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
 
 def parse_args() -> TrainConfig:
     """Parse command line arguments."""
+    default_config = TrainConfig()
     parser = argparse.ArgumentParser(description="Train PPO agent on Tetris")
     parser.add_argument(
         "--sweep",
@@ -400,39 +401,39 @@ def parse_args() -> TrainConfig:
     parser.add_argument(
         "--epochs",
         type=int,
-        default=1000,
-        help="Number of training epochs (default: 1000)",
+        default=default_config.num_epochs,
+        help=f"Number of training epochs (default: {default_config.num_epochs})",
     )
     parser.add_argument(
         "--sweep-trials",
         type=int,
-        default=50,
-        help="Number of sweep trials (default: 50)",
+        default=default_config.sweep_trials,
+        help=f"Number of sweep trials (default: {default_config.sweep_trials})",
     )
     parser.add_argument(
         "--num-envs",
         type=int,
-        default=1024,
-        help="Number of parallel environments (default: 1024)",
+        default=default_config.num_envs,
+        help=f"Number of parallel environments (default: {default_config.num_envs})",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=65536,
-        help="Batch size (default: 65536)",
+        default=default_config.batch_size,
+        help=f"Batch size (default: {default_config.batch_size})",
     )
     parser.add_argument(
         "--logger",
         type=str,
         choices=["noop", "wandb", "neptune"],
-        default="noop",
-        help="Logger to use (default: noop)",
+        default=default_config.logger,
+        help=f"Logger to use (default: {default_config.logger})",
     )
     parser.add_argument(
         "--seed",
         type=int,
-        default=0,
-        help="Random seed (default: 0)",
+        default=default_config.seed,
+        help=f"Random seed (default: {default_config.seed})",
     )
 
     args = parser.parse_args()
