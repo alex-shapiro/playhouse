@@ -46,7 +46,7 @@ class TrainConfig:
     num_epochs: int = 1000
     num_envs: int = 1024
     batch_size: int = 65536
-    bptt_horizon: int = 16
+    bptt_horizon: int = 64
     checkpoint_interval: int = 100
 
     # Sweep
@@ -70,15 +70,15 @@ class TrainConfig:
 class TetrisHyperparameters:
     """Hyperparameters for Tetris PPO training."""
 
-    learning_rate: float = 2.5e-4
-    gamma: float = 0.99
-    gae_lambda: float = 0.95
+    learning_rate: float = 0.012
+    gamma: float = 0.995
+    gae_lambda: float = 0.55
     clip_coef: float = 0.1
-    vf_coef: float = 0.5
-    ent_coef: float = 0.01
-    max_grad_norm: float = 0.5
+    vf_coef: float = 4.74
+    ent_coef: float = 0.02
+    max_grad_norm: float = 5.0
     update_epochs: int = 4
-    hidden_size: int = 128
+    hidden_size: int = 256
 
 
 # -----------------------------------------------------------------------------
@@ -341,6 +341,8 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
         max_grad_norm=hypers.max_grad_norm,
         update_epochs=hypers.update_epochs,
         checkpoint_interval=config.checkpoint_interval,
+        minibatch_size=config.batch_size,
+        max_minibatch_size=config.batch_size,
     )
 
     # Create logger
@@ -385,10 +387,9 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
                 if "environment/ep_return" in logs:
                     ep_return = logs["environment/ep_return"]
                     score = logs["environment/score"]
+                    msg += f" | Return {ep_return:.2f} | Score {score:.1f}"
                 else:
-                    ep_return = "NA"
-                    score = "NA"
-                msg += f" | Return {ep_return:.2f} | Score {score:.1f}"
+                    msg += " | Return N/A | Score N/A"
                 print(msg)
 
     # Close and return final model path
