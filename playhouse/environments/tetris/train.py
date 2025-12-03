@@ -440,7 +440,8 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
     trainer = Trainer(config=rl_config, env=env, policy=policy, logger=logger)
 
     # Try to load from checkpoint
-    checkpoint = find_latest_checkpoint()
+    # checkpoint = find_latest_checkpoint()
+    checkpoint = None
     if checkpoint is not None:
         print(f"\nFound checkpoint at epoch {checkpoint.epoch}")
         load_checkpoint(checkpoint, trainer.uncompiled_policy, trainer.optimizer)
