@@ -75,10 +75,24 @@ class TetrisHyperparameters:
     gae_lambda: float = 0.55
     clip_coef: float = 0.1
     vf_coef: float = 4.74
+    vf_clip_coef: float = 1.5
     ent_coef: float = 0.02
     max_grad_norm: float = 5.0
     update_epochs: int = 4
     hidden_size: int = 256
+
+    # Adam optimizer
+    adam_beta1: float = 0.95
+    adam_beta2: float = 0.9999
+    adam_eps: float = 1e-10
+
+    # V-trace importance sampling
+    vtrace_rho_clip: float = 0.70
+    vtrace_c_clip: float = 1.29
+
+    # Prioritized experience replay
+    prio_alpha: float = 0.99
+    prio_beta0: float = 0.91
 
 
 # -----------------------------------------------------------------------------
@@ -90,62 +104,26 @@ def create_sweep_config(device: str) -> SweepConfig:
     """Create sweep configuration for Tetris hyperparameters."""
     return SweepConfig(
         device=device,
-        metric="ep_return",
+        metric="score",
         goal="maximize",
         params={
-            "learning_rate": ParamSpaceConfig(
-                distribution="log_normal",
-                min=1e-5,
-                max=1e-2,
-                mean=2.5e-4,
-            ),
-            "gamma": ParamSpaceConfig(
-                distribution="uniform",
-                min=0.9,
-                max=0.999,
-                mean=0.99,
-            ),
             "gae_lambda": ParamSpaceConfig(
-                distribution="uniform",
-                min=0.8,
-                max=0.99,
-                mean=0.95,
+                distribution="logit_normal",
+                min=0.01,
+                max=0.995,
+                mean=0.6,
             ),
             "clip_coef": ParamSpaceConfig(
                 distribution="uniform",
-                min=0.05,
-                max=0.3,
+                min=0.01,
+                max=1.0,
                 mean=0.1,
             ),
-            "vf_coef": ParamSpaceConfig(
-                distribution="uniform",
-                min=0.1,
-                max=1.0,
-                mean=0.5,
-            ),
-            "ent_coef": ParamSpaceConfig(
-                distribution="log_normal",
-                min=1e-4,
-                max=0.1,
-                mean=0.01,
-            ),
-            "max_grad_norm": ParamSpaceConfig(
-                distribution="uniform",
-                min=0.1,
-                max=1.0,
-                mean=0.5,
-            ),
-            "update_epochs": ParamSpaceConfig(
-                distribution="int_uniform",
-                min=1,
-                max=10,
-                mean=4,
-            ),
-            "hidden_size": ParamSpaceConfig(
-                distribution="uniform_pow2",
-                min=64,
-                max=512,
-                mean=128,
+            "adam_beta1": ParamSpaceConfig(
+                distribution="logit_normal",
+                min=0.5,
+                max=0.999,
+                mean=0.95,
             ),
         },
     )
@@ -337,12 +315,20 @@ def train(config: TrainConfig, hypers: TetrisHyperparameters) -> str:
         gae_lambda=hypers.gae_lambda,
         clip_coef=hypers.clip_coef,
         vf_coef=hypers.vf_coef,
+        vf_clip_coef=hypers.vf_clip_coef,
         ent_coef=hypers.ent_coef,
         max_grad_norm=hypers.max_grad_norm,
         update_epochs=hypers.update_epochs,
         checkpoint_interval=config.checkpoint_interval,
         minibatch_size=config.batch_size,
         max_minibatch_size=config.batch_size,
+        adam_beta1=hypers.adam_beta1,
+        adam_beta2=hypers.adam_beta2,
+        adam_eps=hypers.adam_eps,
+        vtrace_rho_clip=hypers.vtrace_rho_clip,
+        vtrace_c_clip=hypers.vtrace_c_clip,
+        prio_alpha=hypers.prio_alpha,
+        prio_beta0=hypers.prio_beta0,
     )
 
     # Create logger
